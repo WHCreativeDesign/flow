@@ -2,6 +2,9 @@
   The three-state shell. Any surface running flow is in exactly one of these
   states at all times — no desktop, no windows, no z-index stacking.
 */
+import { settings } from '../settings.svelte';
+import { play } from '../sound/engine';
+
 export type ShellState = 'idle' | 'home' | 'app';
 
 export interface BloomOrigin {
@@ -9,8 +12,6 @@ export interface BloomOrigin {
   x: number;
   y: number;
 }
-
-const IDLE_TIMEOUT_MS = 90_000;
 
 class Shell {
   state = $state<ShellState>('idle');
@@ -23,6 +24,7 @@ class Shell {
   wake() {
     if (this.state === 'idle') {
       this.state = 'home';
+      play('wake');
     }
     this.#armIdleTimer();
   }
@@ -32,6 +34,7 @@ class Shell {
     this.origin = origin;
     this.activeApp = appId;
     this.state = 'app';
+    play('open');
     this.#armIdleTimer();
   }
 
@@ -39,18 +42,21 @@ class Shell {
   goHome() {
     this.state = 'home';
     this.activeApp = null;
+    play('home');
     this.#armIdleTimer();
   }
 
-  /** home → idle: inactivity timeout. Never fires while inside an app. */
+  /** home → idle: inactivity timeout, set in settings. Never fires inside an app. */
   #armIdleTimer() {
     clearTimeout(this.#idleTimer);
+    const sec = settings.current.idleTimeoutSec;
+    if (sec <= 0) return;
     this.#idleTimer = setTimeout(() => {
       if (this.state === 'home') {
         this.state = 'idle';
         this.activeApp = null;
       }
-    }, IDLE_TIMEOUT_MS);
+    }, sec * 1000);
   }
 
   /** any interaction anywhere resets the idle countdown */

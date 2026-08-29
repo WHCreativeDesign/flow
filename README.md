@@ -20,6 +20,21 @@ There is no desktop, no windows, no z-index stacking. Any surface running flow i
 
 The signature gesture is **press → release → bloom**: an orb compresses under the finger (~0.83, fast ease-in), then expands from its exact origin point to fill the screen. Never slide, never cut, never cross-fade.
 
+## Apps
+
+All six orbs open working apps. State persists on the instance (localStorage for structured state, IndexedDB for blobs) through the `InstanceClient` boundary:
+
+- **camera** — live viewfinder (`getUserMedia`), capture with flash, front/back flip, a persistent gallery with save/delete.
+- **notes** — create, edit, autosave, delete; titles derived from the first line.
+- **messages** — named threads with a composer and timestamped bubbles; honest about scope (streams live on this instance until multi-device sync lands).
+- **weather** — live Open-Meteo data: current conditions, 24-hour strip, 7-day range bars; geolocation or place search; °C/°F.
+- **music** — a local library (files persist in IndexedDB), playlist, seek, skip, and a live frequency visualizer.
+- **settings** — system sounds and volume, idle timeout, 12/24-hour clock, terminal name; applied instantly and persisted.
+
+## Sound
+
+All cues are synthesized in `src/lib/sound/engine.ts` — no audio assets. The palette is Windows-7-Aero-inspired struck glass: two-partial bar voices (fundamental + 2.76× inharmonic partial) through a lowpass and a small generated hall, phrased in open fifths in A. Wake, press, bloom, home, send, shutter, toggle, and a gentle two-note refusal. Volume and mute live in settings.
+
 ## Motion law
 
 1. No linear easing anywhere.
