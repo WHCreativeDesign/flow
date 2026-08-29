@@ -37,6 +37,14 @@ All six orbs open working apps. State persists on the instance (localStorage for
 
 All cues are synthesized in `src/lib/sound/engine.ts` — no audio assets. The palette is Windows-7-Aero-inspired struck glass: two-partial bar voices (fundamental + 2.76× inharmonic partial) through a lowpass and a small generated hall, phrased in open fifths in A. Wake, press, bloom, home, send, shutter, toggle, and a gentle two-note refusal. Volume and mute live in settings.
 
+## Performance contract
+
+The atmosphere is the most expensive thing on screen, so it obeys hard rules: **no `filter`, no `mix-blend-mode`, and nothing animated except `transform`.** Filters and blend modes force the compositor to re-rasterize and read back full-screen layers every frame, forever, and the cost grows with whatever is drawn above them. Softness comes from gradient alpha falloff instead — it rasterizes once and is then only ever moved.
+
+Anything occluded stops animating: while an app is open, home and the atmosphere below it hold their pixels and pause. Nothing a person can actually see stops breathing. Layer promotion (`will-change`) is treated as borrowed GPU memory and held only while something is genuinely moving.
+
+Settings carries a **full atmosphere** switch; turning it off leaves a still surface for weaker hardware.
+
 ## Motion law
 
 1. No linear easing anywhere.

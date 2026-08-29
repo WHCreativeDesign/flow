@@ -6,11 +6,14 @@
 
   interface Props {
     onopen: (appId: string, origin: BloomOrigin) => void;
+    /** occluded behind an open app: hold still and stop ticking */
+    paused?: boolean;
   }
-  let { onopen }: Props = $props();
+  let { onopen, paused = false }: Props = $props();
 
   let now = $state(new Date());
   $effect(() => {
+    if (paused) return;
     const t = setInterval(() => (now = new Date()), 15_000);
     return () => clearInterval(t);
   });
@@ -32,7 +35,7 @@
 </script>
 
 <!-- home: a field of orbs. Not an icon grid — a surface of held apps. -->
-<div class="home">
+<div class="home" class:paused>
   <div class="status">
     <span class="pill">{settings.current.deviceLabel}</span>
     <span class="pill time">{time}</span>
@@ -64,6 +67,11 @@
   @keyframes settle {
     from { opacity: 0; transform: translateY(18px) scale(0.985); }
     to { opacity: 1; transform: none; }
+  }
+
+  /* the orbs float forever; behind an app that is invisible work */
+  .home.paused :global(.orb) {
+    animation-play-state: paused;
   }
 
   .status {

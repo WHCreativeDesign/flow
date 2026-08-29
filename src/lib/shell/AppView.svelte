@@ -59,16 +59,19 @@
       el.style.transform = 'scale(0.06)';
       el.style.opacity = '0';
       el.style.borderRadius = '50%';
-      setTimeout(onexit, Math.min(ms, 260));
+      settleTimer = setTimeout(onexit, Math.min(ms, 260));
     } else {
       el.style.transform = '';
       el.style.opacity = '';
       el.style.borderRadius = '';
-      setTimeout(() => {
+      settleTimer = setTimeout(() => {
         if (el && !dragging) el.style.transition = '';
       }, ms);
     }
   }
+
+  let settleTimer: ReturnType<typeof setTimeout> | undefined;
+  $effect(() => () => clearTimeout(settleTimer));
 
   function key(e: KeyboardEvent) {
     if (e.key === 'Escape') onexit();
@@ -127,6 +130,11 @@
       opacity 0.42s ease,
       border-radius var(--bloom-duration) var(--ease-bloom);
     overflow: hidden;
+  }
+  /* Promotion is borrowed GPU memory, not a free speed-up: hold the layer only
+     while it is actually moving. */
+  .bloom:not(.open),
+  .bloom.dragging {
     will-change: transform;
   }
   .bloom.open {
