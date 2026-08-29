@@ -34,7 +34,7 @@
 <!-- home: a field of orbs. Not an icon grid — a surface of held apps. -->
 <div class="home">
   <div class="status">
-    <span class="pill"><i></i>{settings.current.deviceLabel}</span>
+    <span class="pill">{settings.current.deviceLabel}</span>
     <span class="pill time">{time}</span>
   </div>
 
@@ -76,7 +76,6 @@
   .pill {
     display: inline-flex;
     align-items: center;
-    gap: 8px;
     padding: 8px 16px;
     font-size: 11px;
     font-weight: 700;
@@ -89,13 +88,6 @@
     box-shadow: var(--glass-shadow);
     backdrop-filter: var(--glass-blur);
     -webkit-backdrop-filter: var(--glass-blur);
-  }
-  .pill i {
-    width: 7px;
-    height: 7px;
-    border-radius: 50%;
-    background: radial-gradient(circle at 30% 28%, #fff, var(--aqua) 45%, var(--azure) 100%);
-    box-shadow: 0 0 8px rgba(53, 169, 236, 0.75);
   }
   .pill.time {
     font-variant-numeric: tabular-nums;

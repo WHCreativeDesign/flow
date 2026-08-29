@@ -17,12 +17,12 @@
   let shots = $state<Shot[]>([]);
   let viewing = $state<Shot | null>(null);
 
-  async function start() {
+  async function start(want: 'user' | 'environment' = facing) {
     stop();
     perm = 'asking';
     try {
       stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: facing, width: { ideal: 1920 } },
+        video: { facingMode: want, width: { ideal: 1920 } },
         audio: false
       });
       perm = 'live';
@@ -54,8 +54,11 @@
     shots = loaded;
   }
 
+  // Mount once. `start` takes the facing mode as an argument so that reading
+  // it can never make this effect a dependency — a re-run would open a second
+  // stream and re-mint object URLs for every stored capture.
   $effect(() => {
-    void start();
+    void start(facing);
     void loadShots();
     return () => {
       stop();
@@ -88,7 +91,7 @@
   function flip() {
     facing = facing === 'user' ? 'environment' : 'user';
     play('toggle');
-    void start();
+    void start(facing);
   }
 
   async function removeShot(shot: Shot) {
@@ -137,7 +140,7 @@
         <div class="stage-note">
           <div class="big">the lens needs permission</div>
           <div>allow camera access in your browser, then try again</div>
-          <button class="fl-btn" onclick={start}>try again</button>
+          <button class="fl-btn" onclick={() => start(facing)}>try again</button>
         </div>
       {:else}
         <div class="stage-note">
