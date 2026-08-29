@@ -18,6 +18,8 @@ There is no desktop, no windows, no z-index stacking. Any surface running flow i
 | **home** | A field of orbs — a surface of held apps, not an icon grid. |
 | **app** | Edge to edge, zero chrome. One universal edge-swipe-up returns home. |
 
+Exiting is interactive: drag up from the bottom edge and the app follows your finger, shrinking back toward the orb it came from. Release decides the way a physical object would — by where the gesture is *heading*, not only where it stopped. A fast flick dismisses from an inch up; the same inch dragged slowly settles back. Velocity also sets the duration of the finish.
+
 The signature gesture is **press → release → bloom**: an orb compresses under the finger (~0.83, fast ease-in), then expands from its exact origin point to fill the screen. Never slide, never cut, never cross-fade.
 
 ## Apps
@@ -56,7 +58,7 @@ npm run check    # svelte-check / typescript
 ## Architecture
 
 - **Frontend** — Svelte 5 + Vite, fully static SPA. Hosted on GitHub Pages ([`.github/workflows/deploy.yml`](.github/workflows/deploy.yml)); `index.html` is copied to `404.html` at build time as the SPA fallback, and `public/CNAME` pins `flow.usecloak.org`.
-- **Sync** — the UI talks only to the [`InstanceClient`](src/lib/sync/InstanceClient.ts) interface, never to a backend SDK directly. `MemoryInstanceClient` (per-tab state) is the current implementation; the v1 hosted backend arrives next pass as a second implementation, and a phase-two `LocalInstanceClient` moves authority to a Raspberry Pi — each a swap behind the interface, never a rewrite.
+- **Sync** — the UI talks only to the [`InstanceClient`](src/lib/sync/InstanceClient.ts) interface, never to a backend SDK directly. `StorageInstanceClient` is the current implementation — structured state in localStorage (surviving reloads and syncing live across tabs), blobs in IndexedDB; the v1 hosted backend arrives next pass as a second implementation, and a phase-two `LocalInstanceClient` moves authority to a Raspberry Pi — each a swap behind the interface, never a rewrite.
 
 ## Design
 
@@ -81,4 +83,4 @@ Visual source of truth: the brand prototype `flow-brand-v2.html` (kept outside t
 - [ ] 7. Multi-device: Realtime shared state, adaptive rendering per device class
 - [ ] 8. Pi migration: `LocalInstanceClient`, mDNS `flow.local`, tunnel for off-network
 - [ ] 9. Offline transports: Bluetooth → audio → QR burst
-- [ ] 10. Real apps
+- [x] 10. Apps — camera, notes, messages, weather, music, settings all functional on local state

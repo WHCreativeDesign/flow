@@ -1,6 +1,6 @@
 <script lang="ts">
   import { appById } from '../apps/registry';
-  import { edgeSwipeUp } from '../gestures/edgeSwipe';
+  import { dismissGesture, type DismissRelease, type DragSample } from '../gestures/dismiss';
   import type { BloomOrigin } from './state.svelte';
 
   interface Props {
@@ -12,14 +12,63 @@
 
   const app = $derived(appById(appId));
 
+  let el: HTMLDivElement | undefined = $state();
+  let open = $state(false);
+  let dragging = $state(false);
+
   // The bloom: mount at scale(0.06) anchored to the press point, then expand
   // to fill the screen on the next frame. Grow from the touch — never slide,
   // never cut, never cross-fade.
-  let open = $state(false);
   $effect(() => {
     const raf = requestAnimationFrame(() => (open = true));
     return () => cancelAnimationFrame(raf);
   });
+
+  /*
+    Drag transforms are written straight to the node. Routing 60fps of pointer
+    motion through reactive state would re-run effects on every frame for a
+    value only the compositor needs.
+  */
+  function paint(s: DragSample) {
+    if (!el) return;
+    const scale = 1 - s.progress * 0.42;
+    el.style.transform = `translate3d(${s.drift}px, ${-s.travel * 0.28}px, 0) scale(${scale})`;
+    // the card stays opaque while held — a held object does not go translucent,
+    // and letting home read through it muddies both surfaces
+    el.style.borderRadius = `${s.progress * 42}px`;
+  }
+
+  function onstart() {
+    dragging = true;
+    if (el) el.style.transition = 'none';
+  }
+
+  /* Release velocity sets the duration: a flick finishes fast, a slow release
+     takes its time. Same curve either way — nothing here moves linearly. */
+  function settle(r: DismissRelease, to: 'gone' | 'back') {
+    if (!el) return;
+    dragging = false;
+    const distance = to === 'gone' ? r.remaining : Math.max(1, r.travel);
+    const speed = Math.max(r.velocity, 0.35);
+    const ms = Math.min(520, Math.max(170, distance / speed));
+
+    el.style.transition = `transform ${ms}ms var(--ease-bloom), opacity ${ms * 0.8}ms ease, border-radius ${ms}ms var(--ease-bloom)`;
+
+    if (to === 'gone') {
+      // collapse back into the orb it grew from
+      el.style.transform = 'scale(0.06)';
+      el.style.opacity = '0';
+      el.style.borderRadius = '50%';
+      setTimeout(onexit, Math.min(ms, 260));
+    } else {
+      el.style.transform = '';
+      el.style.opacity = '';
+      el.style.borderRadius = '';
+      setTimeout(() => {
+        if (el && !dragging) el.style.transition = '';
+      }, ms);
+    }
+  }
 
   function key(e: KeyboardEvent) {
     if (e.key === 'Escape') onexit();
@@ -28,7 +77,13 @@
 
 <svelte:window onkeydown={key} />
 
-<div class="bloom" class:open style:transform-origin={`${origin.x}% ${origin.y}%`}>
+<div
+  bind:this={el}
+  class="bloom"
+  class:open
+  class:dragging
+  style:transform-origin={`${origin.x}% ${origin.y}%`}
+>
   {#if app}
     <div class="surface">
       <app.component />
@@ -37,7 +92,16 @@
 
   <!-- The universal exit layer sits ABOVE app content, so no app can consume
        the gesture zone and none needs its own navigation chrome. -->
-  <div class="exit-layer" use:edgeSwipeUp={{ onexit }} aria-hidden="true">
+  <div
+    class="exit-layer"
+    use:dismissGesture={{
+      onstart,
+      onmove: paint,
+      ondismiss: (r) => settle(r, 'gone'),
+      oncancel: (r) => settle(r, 'back')
+    }}
+    aria-hidden="true"
+  >
     <span class="grabber"></span>
   </div>
 
@@ -63,11 +127,16 @@
       opacity 0.42s ease,
       border-radius var(--bloom-duration) var(--ease-bloom);
     overflow: hidden;
+    will-change: transform;
   }
   .bloom.open {
     opacity: 1;
     transform: scale(1);
     border-radius: 0;
+  }
+  /* mid-gesture the app is a held object: it casts a shadow off the surface */
+  .bloom.dragging {
+    box-shadow: 0 40px 90px rgba(13, 63, 143, 0.32);
   }
 
   .surface {
@@ -83,13 +152,17 @@
     opacity: 1;
     transform: none;
   }
+  /* freeze the app's own scrolling and pointer work while it is being dragged */
+  .dragging .surface {
+    pointer-events: none;
+  }
 
   .exit-layer {
     position: absolute;
     left: 0;
     right: 0;
     bottom: 0;
-    height: 44px;
+    height: 46px;
     z-index: 10;
     display: flex;
     align-items: flex-end;
@@ -98,14 +171,20 @@
     touch-action: none;
     cursor: grab;
   }
+  .exit-layer:active {
+    cursor: grabbing;
+  }
   .grabber {
     width: 118px;
     height: 5px;
     border-radius: 99px;
     background: rgba(13, 63, 143, 0.3);
     box-shadow: 0 1px 0 rgba(255, 255, 255, 0.7);
-    transform: translateY(calc(var(--swipe-progress, 0) * -16px)) scaleX(calc(1 + var(--swipe-progress, 0) * 0.25));
-    transition: transform 0.15s ease-out;
+    transition: transform 0.3s var(--ease-overshoot), background 0.3s ease;
+  }
+  .dragging .grabber {
+    background: rgba(13, 63, 143, 0.5);
+    transform: scaleX(1.12);
   }
 
   .home-fallback {
@@ -145,9 +224,10 @@
     stroke-linejoin: round;
   }
 
+  /* the home indicator is a touch affordance; pointer devices get the button */
   @media (pointer: fine) {
-    .exit-layer {
-      display: none;
+    .grabber {
+      opacity: 0.4;
     }
   }
 </style>

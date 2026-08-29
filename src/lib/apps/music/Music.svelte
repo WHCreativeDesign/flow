@@ -37,6 +37,12 @@
     return () => {
       cancelAnimationFrame(raf);
       tracks.forEach((t) => URL.revokeObjectURL(t.url));
+      // an AudioContext holds a render thread; browsers cap them per page,
+      // so the analyser graph has to go when the app closes
+      analyser?.disconnect();
+      analyser = null;
+      void ac?.close();
+      ac = null;
     };
   });
 

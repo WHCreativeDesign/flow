@@ -66,7 +66,14 @@ function ensure(): AudioContext | null {
   return ctx;
 }
 
-/* One struck-glass voice. */
+/*
+  One struck-glass voice.
+
+  Every node created here is torn down when the voice finishes. A cue that
+  leaves nodes attached to the master bus keeps them in the render graph
+  forever, and the graph — processed every quantum — grows with each sound
+  the system plays.
+*/
 function glass(
   ac: AudioContext,
   freq: number,
@@ -88,6 +95,7 @@ function glass(
     [2.76, 0.28],
     [5.4, 0.06]
   ];
+  const voices: OscillatorNode[] = [];
   for (const [ratio, amp] of partials) {
     const o = ac.createOscillator();
     const g = ac.createGain();
@@ -100,7 +108,17 @@ function glass(
     o.connect(g).connect(out);
     o.start(at);
     o.stop(at + decay + 0.1);
+    o.onended = () => {
+      o.disconnect();
+      g.disconnect();
+    };
+    voices.push(o);
   }
+  // the fundamental rings longest, so its end is the voice's end
+  voices[0].addEventListener('ended', () => {
+    out.disconnect();
+    lp.disconnect();
+  });
 }
 
 /* A soft, pitched thump for presses — felt more than heard. */
@@ -116,6 +134,10 @@ function thump(ac: AudioContext, at: number, freq = 190, gain = 0.1) {
   o.connect(g).connect(master!);
   o.start(at);
   o.stop(at + 0.15);
+  o.onended = () => {
+    o.disconnect();
+    g.disconnect();
+  };
 }
 
 /* Filtered noise puff (shutter, ticks). */
@@ -134,6 +156,11 @@ function puff(ac: AudioContext, at: number, { gain = 0.12, dur = 0.05, center = 
   g.gain.value = gain;
   src.connect(bp).connect(g).connect(master!);
   src.start(at);
+  src.onended = () => {
+    src.disconnect();
+    bp.disconnect();
+    g.disconnect();
+  };
 }
 
 // pitches around A major — the warm, unhurried key of the Aero palette
