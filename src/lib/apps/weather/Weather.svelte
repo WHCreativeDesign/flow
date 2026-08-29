@@ -24,6 +24,8 @@
   let results = $state<Place[]>([]);
   let searching = $state(false);
   let useF = $state(false);
+  let disposed = false;
+  let inflight: AbortController | null = null;
 
   const CODES: Record<number, { label: string; glyph: string }> = {
     0: { label: 'clear', glyph: 'sun' },
@@ -69,6 +71,8 @@
 
   async function fetchWx(p: Place) {
     phase = 'loading';
+    inflight?.abort();
+    const ctl = (inflight = new AbortController());
     try {
       const u = new URL('https://api.open-meteo.com/v1/forecast');
       u.searchParams.set('latitude', String(p.lat));
@@ -78,9 +82,10 @@
       u.searchParams.set('daily', 'weather_code,temperature_2m_max,temperature_2m_min');
       u.searchParams.set('forecast_days', '7');
       u.searchParams.set('timezone', 'auto');
-      const r = await fetch(u);
+      const r = await fetch(u, { signal: ctl.signal });
       if (!r.ok) throw new Error(String(r.status));
       const d = await r.json();
+      if (disposed) return;
 
       const nowIdx = Math.max(0, d.hourly.time.findIndex((x: string) => new Date(x) >= new Date()) - 1);
       wx = {
@@ -104,7 +109,8 @@
       phase = 'ready';
       place = p;
       void instance.setAppState('weather', { place: p, useF });
-    } catch {
+    } catch (e) {
+      if (disposed || (e instanceof DOMException && e.name === 'AbortError')) return;
       phase = 'error';
       play('deny');
     }
@@ -114,13 +120,16 @@
     play('tap');
     phase = 'loading';
     navigator.geolocation.getCurrentPosition(
-      (pos) =>
+      (pos) => {
+        if (disposed) return;
         void fetchWx({
           name: 'where you are',
           lat: pos.coords.latitude,
           lon: pos.coords.longitude
-        }),
+        });
+      },
       () => {
+        if (disposed) return;
         phase = place ? 'ready' : 'idle';
         play('deny');
       },
@@ -139,6 +148,7 @@
     searching = true;
     searchTimer = setTimeout(async () => {
       try {
+        if (disposed) return;
         const u = new URL('https://geocoding-api.open-meteo.com/v1/search');
         u.searchParams.set('name', q.trim());
         u.searchParams.set('count', '5');
@@ -171,11 +181,18 @@
   }
 
   $effect(() => {
+    disposed = false;
     void instance.getAppState('weather').then((s) => {
+      if (disposed) return;
       if (s?.useF) useF = true;
       if (s?.place) void fetchWx(s.place as Place);
       else locate();
     });
+    return () => {
+      disposed = true;
+      clearTimeout(searchTimer);
+      inflight?.abort();
+    };
   });
 
   const dayName = (iso: string, i: number) =>

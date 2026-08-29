@@ -22,10 +22,18 @@
   });
 
   let saveTimer: ReturnType<typeof setTimeout>;
+  function save() {
+    void instance.setAppState('notes', { notes: $state.snapshot(notes) });
+  }
   function persist() {
     clearTimeout(saveTimer);
-    saveTimer = setTimeout(() => void instance.setAppState('notes', { notes: $state.snapshot(notes) }), 250);
+    saveTimer = setTimeout(save, 250);
   }
+  // closing within the debounce window must not cost the last keystrokes
+  $effect(() => () => {
+    clearTimeout(saveTimer);
+    if (loaded) save();
+  });
 
   function create() {
     const note: Note = { id: crypto.randomUUID(), text: '', updated: Date.now() };

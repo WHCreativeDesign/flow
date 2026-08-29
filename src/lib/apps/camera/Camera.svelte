@@ -16,15 +16,25 @@
   }
   let shots = $state<Shot[]>([]);
   let viewing = $state<Shot | null>(null);
+  /* getUserMedia can resolve long after the app is closed — on a first grant
+     the user may not answer the prompt for seconds. Without this the stream
+     lands after teardown and nothing ever stops it: the lens stays lit. */
+  let disposed = false;
+  let flashTimer: ReturnType<typeof setTimeout> | undefined;
 
   async function start(want: 'user' | 'environment' = facing) {
     stop();
     perm = 'asking';
     try {
-      stream = await navigator.mediaDevices.getUserMedia({
+      const opened = await navigator.mediaDevices.getUserMedia({
         video: { facingMode: want, width: { ideal: 1920 } },
         audio: false
       });
+      if (disposed) {
+        opened.getTracks().forEach((t) => t.stop());
+        return;
+      }
+      stream = opened;
       perm = 'live';
       // wait a tick for the <video> to exist, then attach
       queueMicrotask(() => {
@@ -34,6 +44,7 @@
         }
       });
     } catch (e) {
+      if (disposed) return;
       perm = e instanceof DOMException && e.name === 'NotFoundError' ? 'nocam' : 'denied';
       play('deny');
     }
@@ -58,9 +69,12 @@
   // it can never make this effect a dependency — a re-run would open a second
   // stream and re-mint object URLs for every stored capture.
   $effect(() => {
+    disposed = false;
     void start(facing);
     void loadShots();
     return () => {
+      disposed = true;
+      clearTimeout(flashTimer);
       stop();
       shots.forEach((s) => URL.revokeObjectURL(s.url));
     };
@@ -70,7 +84,8 @@
     if (!video || perm !== 'live') return;
     play('shutter');
     flash = true;
-    setTimeout(() => (flash = false), 260);
+    clearTimeout(flashTimer);
+    flashTimer = setTimeout(() => (flash = false), 260);
 
     const canvas = document.createElement('canvas');
     canvas.width = video.videoWidth;
@@ -82,7 +97,7 @@
     }
     cx.drawImage(video, 0, 0);
     const blob = await new Promise<Blob | null>((r) => canvas.toBlob(r, 'image/jpeg', 0.92));
-    if (!blob) return;
+    if (!blob || disposed) return;
     const key = String(Date.now());
     await idb.set('photos', key, blob);
     shots = [{ key, url: URL.createObjectURL(blob) }, ...shots];
