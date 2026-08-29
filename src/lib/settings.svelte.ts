@@ -10,6 +10,8 @@ export interface FlowSettings {
   idleTimeoutSec: number; // 0 = never
   deviceLabel: string;
   use24hClock: boolean;
+  /** full atmosphere drift, or a still surface on weaker hardware */
+  richEffects: boolean;
 }
 
 const KEY = 'flow.settings';
@@ -19,7 +21,8 @@ const defaults: FlowSettings = {
   soundVolume: 0.5,
   idleTimeoutSec: 90,
   deviceLabel: 'this terminal',
-  use24hClock: false
+  use24hClock: false,
+  richEffects: true
 };
 
 function load(): FlowSettings {

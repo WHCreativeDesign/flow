@@ -22,6 +22,10 @@
     settings.update({ idleTimeoutSec: v });
     play('tap');
   }
+  function setEffects(on: boolean) {
+    settings.update({ richEffects: on });
+    play('toggle');
+  }
   function setClock(use24: boolean) {
     settings.update({ use24hClock: use24 });
     play('toggle');
@@ -78,6 +82,20 @@
             </button>
           {/each}
         </div>
+      </div>
+      <div class="line">
+        <span class="line-col">
+          <span class="line-label">full atmosphere</span>
+          <span class="line-hint">drifting light and bokeh. turn off on older hardware.</span>
+        </span>
+        <button
+          class="switch"
+          class:on={s.richEffects}
+          role="switch"
+          aria-checked={s.richEffects}
+          aria-label="full atmosphere"
+          onclick={() => setEffects(!s.richEffects)}
+        ><i></i></button>
       </div>
       <div class="line">
         <span class="line-label">24-hour clock</span>
@@ -154,6 +172,17 @@
     font-size: 14px;
     font-weight: 600;
     color: var(--ink);
+  }
+  .line-col {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    min-width: 0;
+  }
+  .line-hint {
+    font-size: 11.5px;
+    color: var(--ink-faint);
+    line-height: 1.45;
   }
 
   /* liquid toggle */
