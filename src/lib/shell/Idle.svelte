@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { settings } from '../settings.svelte';
+
   interface Props {
     onwake: () => void;
   }
@@ -12,7 +14,11 @@
   });
 
   const time = $derived(
-    now.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }).toLowerCase()
+    now
+      .toLocaleTimeString([], settings.current.use24hClock
+        ? { hour: '2-digit', minute: '2-digit', hour12: false }
+        : { hour: 'numeric', minute: '2-digit' })
+      .toLowerCase()
   );
   const date = $derived(
     now.toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric' }).toLowerCase()

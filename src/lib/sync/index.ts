@@ -1,5 +1,5 @@
 import type { InstanceClient } from './InstanceClient';
-import { MemoryInstanceClient } from './MemoryInstanceClient';
+import { StorageInstanceClient } from './StorageInstanceClient';
 
 /*
   The single place the implementation is chosen. Everything else imports
@@ -7,5 +7,6 @@ import { MemoryInstanceClient } from './MemoryInstanceClient';
   slots in here as a second implementation; a phase-two Pi host as a third
   (`LocalInstanceClient`) — a swap, never a rewrite.
 */
-export const instance: InstanceClient = new MemoryInstanceClient();
+export const instance: InstanceClient = new StorageInstanceClient();
+void instance.connect();
 export type { InstanceClient, AppState, DeviceInfo, DeviceClass } from './InstanceClient';

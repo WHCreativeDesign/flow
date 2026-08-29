@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { FlowApp } from '../apps/registry';
   import type { BloomOrigin } from '../shell/state.svelte';
+  import { play } from '../sound/engine';
 
   interface Props {
     app: FlowApp;
@@ -32,6 +33,7 @@
   style:--float-duration={duration}
   style:--float-delay={delay}
   style:--drift={drift}
+  onpointerdown={() => play('press')}
   onclick={release}
   aria-label={`open ${app.label}`}
 >
