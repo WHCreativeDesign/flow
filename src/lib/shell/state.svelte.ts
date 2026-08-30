@@ -67,6 +67,14 @@ class Shell {
     }, sec * 1000);
   }
 
+  /** sign-out / user switch: back to a clean shell, nothing of theirs left open */
+  reset() {
+    this.state = 'home';
+    this.activeApp = null;
+    this.homePage = 0;
+    clearTimeout(this.#idleTimer);
+  }
+
   setHomePage(page: number) {
     this.homePage = page;
     this.#armIdleTimer();

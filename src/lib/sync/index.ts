@@ -1,12 +1,20 @@
 import type { InstanceClient } from './InstanceClient';
-import { StorageInstanceClient } from './StorageInstanceClient';
+import { SupabaseInstanceClient } from './SupabaseInstanceClient';
 
 /*
   The single place the implementation is chosen. Everything else imports
-  `instance` and stays ignorant of what backs it. v1 backend (next pass)
-  slots in here as a second implementation; a phase-two Pi host as a third
-  (`LocalInstanceClient`) — a swap, never a rewrite.
+  `instance` and stays ignorant of what backs it — which is exactly what made
+  moving from localStorage to Supabase a swap here rather than a rewrite of
+  every app. A phase-two Pi host slots in the same way.
 */
-export const instance: InstanceClient = new StorageInstanceClient();
+const client = new SupabaseInstanceClient();
+export const instance: InstanceClient = client;
 void instance.connect();
+
+/* Sign-out has to drop cached state, or the next user briefly sees the last
+   one's notes while their own rows load. */
+export function clearInstanceCache() {
+  client.clear();
+}
+
 export type { InstanceClient, AppState, DeviceInfo, DeviceClass } from './InstanceClient';

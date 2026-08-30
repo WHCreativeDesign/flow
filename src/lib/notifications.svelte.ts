@@ -64,24 +64,22 @@ function weatherNote(wx: Forecast, place: Place): Note | null {
   };
 }
 
-const CLEARED_KEY = 'flow.glance.cleared';
-
-function readCleared(): string[] {
-  try {
-    return JSON.parse(localStorage.getItem(CLEARED_KEY) ?? '[]') as string[];
-  } catch {
-    return [];
-  }
+/*
+  Which cards have been cleared lives on the instance, not in localStorage:
+  it belongs to the person, not to the browser. Two users sharing a terminal
+  must not clear each other's glance, and clearing a card on the phone should
+  clear it on the wall too.
+*/
+async function readCleared(): Promise<string[]> {
+  const state = await instance.getAppState('notifications');
+  const list = state?.cleared;
+  return Array.isArray(list) ? (list as string[]) : [];
 }
 
 /** Clear one card. It returns when its signature changes, not before. */
-export function clearNote(signature: string) {
-  const next = [...new Set([...readCleared(), signature])].slice(-40);
-  try {
-    localStorage.setItem(CLEARED_KEY, JSON.stringify(next));
-  } catch {
-    /* private mode: the card comes back next read, which is the safe way to fail */
-  }
+export async function clearNote(signature: string) {
+  const next = [...new Set([...(await readCleared()), signature])].slice(-40);
+  await instance.setAppState('notifications', { cleared: next });
 }
 
 export async function collect(): Promise<Note[]> {
@@ -162,7 +160,7 @@ export async function collect(): Promise<Note[]> {
     /* storage unavailable */
   }
 
-  const cleared = new Set(readCleared());
+  const cleared = new Set(await readCleared());
   return out.filter((n) => !cleared.has(n.signature));
 }
 
