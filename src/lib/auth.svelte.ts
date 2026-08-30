@@ -199,7 +199,7 @@ class Auth {
     }>;
   }
 
-  async adminAddKey(provider: 'groq' | 'gemini', key: string, label: string) {
+  async adminAddKey(provider: 'groq' | 'nvidia' | 'gemini', key: string, label: string) {
     if (!this.adminToken) throw new Error('locked');
     const { error } = await supabase().rpc('flow_admin_add_key', {
       p_admin_token: this.adminToken,

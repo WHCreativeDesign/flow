@@ -71,19 +71,24 @@ Removing a user deletes everything of theirs, by cascade.
 The assistant is real now. It was a labelled placeholder before, because a
 placeholder that looked live would misrepresent what the system does.
 
-Answers come from **Groq** free tier, falling back to **Gemini 3.6 Flash**
-when Groq fails or is rate-limited. Each provider holds a pool of **up to five
-keys**, tried in order — one key is one point of failure, and a 429 on one key
-says nothing about the next. A key that returns 401 is disabled on the spot; a
-429 is recorded but never disables, because quota comes back. Keys live in a
-table with RLS on and no policies and no grants, so the browser cannot read a
-single row; the admin panel lists a masked tail and nothing else.
+Answers come from **Groq** free tier, falling back to **NVIDIA NIM**, falling
+back to **Gemini 3.6 Flash** — three independent providers, so one running out
+of quota is a fallback, not an outage. NVIDIA speaks the same OpenAI-compatible
+chat-completions shape Groq does, so it reuses that code path rather than
+adding a fourth one; it carries no vision support here, so an attached photo
+skips it and goes straight to Groq or Gemini. Each provider holds a pool of
+**up to five keys**, tried in order — one key is one point of failure, and a
+429 on one key says nothing about the next. A key that returns 401 is disabled
+on the spot; a 429 is recorded but never disables, because quota comes back.
+Keys live in a table with RLS on and no policies and no grants, so the browser
+cannot read a single row; the admin panel lists a masked tail and nothing else.
 
-Replies **stream**, token by token, from both providers. Streaming is opt-in
-per request: this function deploys independently of the app, so an older build
-in the wild would call `res.json()` on an event stream — defaulting to JSON
-keeps every deploy backward compatible. Chat history is per-user and lives in
-Supabase, so a conversation started on the phone continues on the wall.
+Replies **stream**, token by token, from all three providers. Streaming is
+opt-in per request: this function deploys independently of the app, so an
+older build in the wild would call `res.json()` on an event stream — defaulting
+to JSON keeps every deploy backward compatible. Chat history is per-user and
+lives in Supabase, so a conversation started on the phone continues on the
+wall.
 
 The conversation is laid out the way ChatGPT and Claude lay one out, because
 that shape has a reason behind it: a reply is a document, not a chat bubble.
@@ -113,7 +118,7 @@ state a durable fact — a name, a preference, a routine — it emits a
 `<remember>` tag, which the Edge Function strips out of what you see and writes
 to a per-user `memories` table; later conversations get those facts in their
 system prompt. A tag contract rather than native tool-calling, because that
-works identically on Groq and Gemini and would not break the moment the
+works identically across all three providers and would not break the moment the
 fallback fires.
 
 Memory is **shown, not silent**. A reply that stored something says so
@@ -149,7 +154,7 @@ All seven orbs open working apps. State persists per-user in Supabase through th
 - **messages** — named threads with a composer and timestamped bubbles; honest about scope (streams live on this instance until multi-device sync lands).
 - **weather** — live Open-Meteo data: current conditions, 24-hour strip, 7-day range bars; geolocation or place search; °C/°F.
 - **music** — a local library (files persist in IndexedDB), playlist, seek, skip, and a live frequency visualizer.
-- **assistant** — Groq-backed chat with Gemini fallback; per-user history that follows you between terminals.
+- **assistant** — Groq-backed chat with NVIDIA and Gemini fallback; per-user history that follows you between terminals.
 - **settings** — system sounds and volume, idle timeout, 12/24-hour clock, terminal name; applied instantly and persisted. Also sign-out, an assistant key check, and the hidden admin panel.
 
 ## Inside an app
