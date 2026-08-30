@@ -19,6 +19,12 @@ export interface Note {
   at?: number;
   /** weather only: which glyph the condition maps to */
   glyph?: string;
+  /*
+    What this card is *about*. Clearing a card records its signature, so it
+    stays gone until the underlying thing actually changes — a newer message
+    or another capture brings it back, re-reading the same state does not.
+  */
+  signature: string;
 }
 
 interface StoredNote {
@@ -43,7 +49,8 @@ function weatherNote(wx: Forecast, place: Place): Note | null {
       title: `${codeOf(wet.code).label} around ${when}`,
       body: `${wet.precip}% chance in ${place.name.split(',')[0].toLowerCase()}`,
       app: 'weather',
-      glyph: codeOf(wet.code).glyph
+      glyph: codeOf(wet.code).glyph,
+      signature: `wx-precip:${wet.time}`
     };
   }
   return {
@@ -52,8 +59,29 @@ function weatherNote(wx: Forecast, place: Place): Note | null {
     title: `${Math.round(wx.tempC)}° and ${codeOf(wx.code).label}`,
     body: `feels ${Math.round(wx.feelsC)}° in ${place.name.split(',')[0].toLowerCase()}`,
     app: 'weather',
-    glyph: codeOf(wx.code).glyph
+    glyph: codeOf(wx.code).glyph,
+    signature: `wx-now:${wx.code}:${Math.round(wx.tempC)}`
   };
+}
+
+const CLEARED_KEY = 'flow.glance.cleared';
+
+function readCleared(): string[] {
+  try {
+    return JSON.parse(localStorage.getItem(CLEARED_KEY) ?? '[]') as string[];
+  } catch {
+    return [];
+  }
+}
+
+/** Clear one card. It returns when its signature changes, not before. */
+export function clearNote(signature: string) {
+  const next = [...new Set([...readCleared(), signature])].slice(-40);
+  try {
+    localStorage.setItem(CLEARED_KEY, JSON.stringify(next));
+  } catch {
+    /* private mode: the card comes back next read, which is the safe way to fail */
+  }
 }
 
 export async function collect(): Promise<Note[]> {
@@ -88,7 +116,8 @@ export async function collect(): Promise<Note[]> {
       title: latest.thread,
       body: latest.text,
       app: 'messages',
-      at: latest.at
+      at: latest.at,
+      signature: `msg:${latest.at}`
     });
   }
 
@@ -101,7 +130,8 @@ export async function collect(): Promise<Note[]> {
       title: recent.text.trim().split('\n')[0] || 'untitled',
       body: `${notes.length} ${notes.length === 1 ? 'note' : 'notes'} on this instance`,
       app: 'notes',
-      at: recent.updated
+      at: recent.updated,
+      signature: `note:${recent.updated}`
     });
   }
 
@@ -114,7 +144,8 @@ export async function collect(): Promise<Note[]> {
         title: `${photos.length} ${photos.length === 1 ? 'capture' : 'captures'}`,
         body: 'in your gallery',
         app: 'camera',
-        at: Number(photos[photos.length - 1])
+        at: Number(photos[photos.length - 1]),
+        signature: `cam:${photos.length}`
       });
     }
     if (tracks.length) {
@@ -123,12 +154,30 @@ export async function collect(): Promise<Note[]> {
         kind: 'music',
         title: `${tracks.length} ${tracks.length === 1 ? 'track' : 'tracks'}`,
         body: 'in your library',
-        app: 'music'
+        app: 'music',
+        signature: `music:${tracks.length}`
       });
     }
   } catch {
     /* storage unavailable */
   }
 
-  return out;
+  const cleared = new Set(readCleared());
+  return out.filter((n) => !cleared.has(n.signature));
 }
+
+/*
+  Assistant suggestions. Placeholders, and labelled as such wherever they are
+  shown — the copy is fixed rather than generated, because nothing is
+  generating anything yet.
+*/
+export interface Suggestion {
+  id: string;
+  text: string;
+}
+
+export const suggestions: Suggestion[] = [
+  { id: 's-day', text: "what's on today?" },
+  { id: 's-notes', text: 'summarise my notes' },
+  { id: 's-weather', text: 'will i need a coat?' }
+];

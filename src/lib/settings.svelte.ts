@@ -12,6 +12,8 @@ export interface FlowSettings {
   use24hClock: boolean;
   /** full atmosphere drift, or a still surface on weaker hardware */
   richEffects: boolean;
+  /** assistant surfaces on the glance page (summary, suggestions, ask) */
+  aiEnabled: boolean;
 }
 
 const KEY = 'flow.settings';
@@ -22,7 +24,8 @@ const defaults: FlowSettings = {
   idleTimeoutSec: 90,
   deviceLabel: 'this terminal',
   use24hClock: false,
-  richEffects: true
+  richEffects: true,
+  aiEnabled: true
 };
 
 function load(): FlowSettings {
