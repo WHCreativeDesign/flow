@@ -20,8 +20,21 @@ export interface FlowSettings {
   idleTimeoutSec: number; // 0 = never
   deviceLabel: string;
   use24hClock: boolean;
-  /** full atmosphere drift, or a still surface on weaker hardware */
-  richEffects: boolean;
+  /*
+    Graphics tier, 1..3.
+
+      1  low — flat. Same animations, same gradients, but no idle movement at
+         all, no decorative depth (shadows, grain, blur-ish stacks), and fewer
+         drawn objects. Aimed at weak hardware: what it removes is the work
+         that never stops, not the motion you asked for.
+      2  normal — ambient drift at a reduced object count.
+      3  full — every layer, every drift.
+
+    Transitions are identical across all three on purpose. A cheap device
+    should still feel like the same system responding to you; what it should
+    not do is burn a battery animating things nobody asked to move.
+  */
+  graphics: 1 | 2 | 3;
   /** assistant surfaces on the glance page (summary, suggestions, ask) */
   aiEnabled: boolean;
 }
@@ -34,18 +47,29 @@ const defaults: FlowSettings = {
   idleTimeoutSec: 90,
   deviceLabel: 'this terminal',
   use24hClock: false,
-  richEffects: true,
+  graphics: 3,
   aiEnabled: true
 };
 
 function load(): FlowSettings {
   try {
     const raw = localStorage.getItem(KEY);
-    if (raw) return { ...defaults, ...JSON.parse(raw) };
+    if (raw) return migrate({ ...defaults, ...JSON.parse(raw) });
   } catch {
     /* fresh start */
   }
   return { ...defaults };
+}
+
+/* The tier replaced a richEffects boolean. Anyone who had turned effects off
+   meant "this device struggles", which is tier 1, not tier 2. */
+function migrate(s: FlowSettings & { richEffects?: boolean }): FlowSettings {
+  if (s.graphics === undefined && s.richEffects !== undefined) {
+    s.graphics = s.richEffects ? 3 : 1;
+  }
+  if (s.graphics !== 1 && s.graphics !== 2 && s.graphics !== 3) s.graphics = 3;
+  delete s.richEffects;
+  return s;
 }
 
 /** everything except the terminal's own name */

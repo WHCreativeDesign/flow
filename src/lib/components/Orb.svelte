@@ -67,6 +67,8 @@
     transform: translateY(var(--drift));
     transition: transform 0.62s var(--ease-rise), filter 0.4s ease;
     animation: float-orb var(--float-duration) var(--float-delay) ease-in-out infinite alternate;
+    /* the drift is idle movement — tier 1 drops it, the press/bloom does not
+       change at all (see app.css, graphics tier 1) */
   }
 
   @keyframes float-orb {

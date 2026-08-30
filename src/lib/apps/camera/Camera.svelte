@@ -1,6 +1,7 @@
 <script lang="ts">
   import { idb } from '../../storage/idb';
   import { play } from '../../sound/engine';
+  import Pane from '../../components/Pane.svelte';
 
   type Perm = 'asking' | 'live' | 'denied' | 'nocam';
 
@@ -127,6 +128,7 @@
 </script>
 
 <div class="fl-app camera">
+<Pane key={viewing?.key ?? '#live'} direction={viewing ? 1 : -1}>
   {#if viewing}
     <div class="viewer">
       <img src={viewing.url} alt="capture from {new Date(Number(viewing.key)).toLocaleString()}" />
@@ -182,6 +184,7 @@
       </button>
     </div>
   {/if}
+</Pane>
 </div>
 
 <style>
