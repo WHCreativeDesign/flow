@@ -122,8 +122,16 @@
     settings.update({ idleTimeoutSec: v });
     play('tap');
   }
-  function setEffects(on: boolean) {
-    settings.update({ richEffects: on });
+  const tiers = [
+    { v: 1 as const, name: 'low', hint: 'flat surfaces, nothing drifting. for older hardware.' },
+    { v: 2 as const, name: 'normal', hint: 'ambient drift, fewer objects.' },
+    { v: 3 as const, name: 'full', hint: 'every layer, every drift.' }
+  ];
+  const tier = $derived(tiers.find((t) => t.v === s.graphics) ?? tiers[2]);
+
+  function setGraphics(v: 1 | 2 | 3) {
+    if (v === s.graphics) return;
+    settings.update({ graphics: v });
     play('toggle');
   }
   function setAi(on: boolean) {
@@ -187,19 +195,33 @@
           {/each}
         </div>
       </div>
-      <div class="line">
+      <div class="line col">
         <span class="line-col">
-          <span class="line-label">full atmosphere</span>
-          <span class="line-hint">drifting light and bokeh. turn off on older hardware.</span>
+          <span class="line-label">graphics · {tier.name}</span>
+          <span class="line-hint">{tier.hint}</span>
         </span>
-        <button
-          class="switch"
-          class:on={s.richEffects}
-          role="switch"
-          aria-checked={s.richEffects}
-          aria-label="full atmosphere"
-          onclick={() => setEffects(!s.richEffects)}
-        ><i></i></button>
+        <!--
+          Three stops rather than a range input: the values are named states,
+          not a continuum, and a slider that snaps to three points is a worse
+          version of three buttons. Animations are identical at every stop —
+          only ambient work and object count change.
+        -->
+        <div class="tiers" role="radiogroup" aria-label="graphics quality">
+          {#each tiers as t (t.v)}
+            <button
+              class="tier"
+              class:on={s.graphics === t.v}
+              role="radio"
+              aria-checked={s.graphics === t.v}
+              onclick={() => setGraphics(t.v)}
+            >
+              <span class="bars" aria-hidden="true">
+                {#each [1, 2, 3] as b (b)}<i class:lit={b <= t.v}></i>{/each}
+              </span>
+              <span class="tier-name">{t.name}</span>
+            </button>
+          {/each}
+        </div>
       </div>
       <div class="line">
         <span class="line-label">24-hour clock</span>
@@ -339,6 +361,69 @@
 </div>
 
 <style>
+  .tiers {
+    display: flex;
+    gap: 8px;
+    width: 100%;
+    margin-top: 10px;
+  }
+  .tier {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 7px;
+    padding: 11px 6px 9px;
+    cursor: pointer;
+    border-radius: 14px;
+    border: 1px solid rgba(255, 255, 255, 0.7);
+    background: linear-gradient(168deg, rgba(255, 255, 255, 0.55), rgba(226, 245, 253, 0.34));
+    font-family: var(--font-body);
+    transition: transform 0.28s var(--ease-overshoot), border-color 0.24s ease;
+  }
+  .tier.on {
+    border-color: hsl(205 80% 60%);
+    background: linear-gradient(168deg, hsl(200 92% 92%), hsl(206 84% 84%));
+  }
+  .tier:active {
+    transform: scale(0.95);
+    transition-duration: var(--press-duration);
+    transition-timing-function: var(--ease-press);
+  }
+  /* a signal-strength read: how much is switched on, at a glance */
+  .bars {
+    display: flex;
+    align-items: flex-end;
+    gap: 3px;
+    height: 15px;
+  }
+  .bars i {
+    width: 4px;
+    border-radius: 2px;
+    background: var(--deep);
+    opacity: 0.16;
+  }
+  .bars i:nth-child(1) { height: 47%; }
+  .bars i:nth-child(2) { height: 73%; }
+  .bars i:nth-child(3) { height: 100%; }
+  .bars i.lit {
+    opacity: 0.82;
+  }
+  .tier-name {
+    font-size: 10.5px;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--deep);
+    opacity: 0.72;
+  }
+  .tier.on .tier-name {
+    opacity: 1;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .tier { transition: none; }
+  }
+
   .grow { flex: 1; }
   .sm { padding: 5px 12px; font-size: 10px; }
   .user-row { gap: 8px; }

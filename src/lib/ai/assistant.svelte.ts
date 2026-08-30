@@ -1,5 +1,7 @@
 import { supabase, FUNCTIONS_URL, ANON_KEY, readToken } from '../sync/supabase';
 import { auth } from '../auth.svelte';
+import { buildContext, photoByKey } from './context';
+import { play } from '../sound/engine';
 
 /*
   The assistant, and its history.
@@ -138,6 +140,19 @@ class Assistant {
     this.error = null;
   }
 
+  /** photo keys attached to the next question, newest-first from the gallery */
+  attached = $state<string[]>([]);
+
+  toggleAttach(key: string) {
+    this.attached = this.attached.includes(key)
+      ? this.attached.filter((k) => k !== key)
+      : [...this.attached, key].slice(-3);
+  }
+
+  clearAttached() {
+    this.attached = [];
+  }
+
   async ask(text: string) {
     const body = text.trim();
     if (!body || this.thinking || !auth.user) return;
@@ -149,6 +164,7 @@ class Assistant {
     this.error = null;
     this.thinking = true;
     this.justRemembered = [];
+    play('thinking');
 
     // show the question immediately; the round trip is not instant
     const local: ChatMessage = {
@@ -161,6 +177,18 @@ class Assistant {
     this.messages = [...this.messages, local];
 
     const history = this.messages.map((m) => ({ role: m.role, content: m.content }));
+
+    /*
+      Everything on the instance, assembled fresh. Not cached, because the
+      point is that the assistant knows what is true now — and read through
+      the same RLS-scoped layer as the UI, so it can only ever contain this
+      user's own material.
+    */
+    const [instanceContext, images] = await Promise.all([
+      buildContext(),
+      Promise.all(this.attached.map((k) => photoByKey(k))).then((r) => r.filter(Boolean))
+    ]);
+    this.attached = [];
 
     await supabase()
       .from('chat_messages')
@@ -181,12 +209,18 @@ class Assistant {
           apikey: ANON_KEY,
           'x-flow-token': readToken() ?? ''
         },
-        body: JSON.stringify({ messages: history, mode: 'chat' })
+        body: JSON.stringify({
+          messages: history,
+          mode: 'chat',
+          instance: instanceContext,
+          images
+        })
       });
       const data = await res.json();
 
       if (!res.ok || !data.reply) {
         this.error = data.detail?.join(' · ') ?? data.error ?? `HTTP ${res.status}`;
+        play('deny');
         return;
       }
 
@@ -199,11 +233,15 @@ class Assistant {
         fresh: true
       };
       this.messages = [...this.messages, reply];
+      play('reply');
 
       // surfaced rather than silent: being remembered without being told is
       // the part of assistant memory people object to
       if (Array.isArray(data.remembered) && data.remembered.length) {
         this.justRemembered = data.remembered;
+        // a second, quieter cue so writing something down is audible as its
+        // own event rather than folded into the answer
+        setTimeout(() => play('noted'), 260);
         void this.loadMemories();
       }
 
@@ -217,6 +255,7 @@ class Assistant {
       await supabase().from('chats').update({ updated_at: new Date().toISOString() }).eq('id', chatId);
     } catch (e) {
       this.error = (e as Error).message;
+      play('deny');
     } finally {
       this.thinking = false;
     }
@@ -248,6 +287,7 @@ class Assistant {
     this.error = null;
     this.memories = [];
     this.justRemembered = [];
+    this.attached = [];
   }
 }
 

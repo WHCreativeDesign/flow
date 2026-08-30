@@ -1,6 +1,7 @@
 <script lang="ts">
   import { instance } from '../../sync';
   import { play } from '../../sound/engine';
+  import Pane from '../../components/Pane.svelte';
 
   /*
     Honest scope: until multi-device sync lands, threads live on this
@@ -75,6 +76,7 @@
 </script>
 
 <div class="fl-app messages">
+<Pane key={openId ?? '#list'} direction={openId ? 1 : -1}>
   {#if openThread}
     <div class="fl-app-head">
       <button class="fl-btn quiet" onclick={() => { openId = null; play('tap'); }}>
@@ -148,6 +150,7 @@
       </div>
     {/if}
   {/if}
+</Pane>
 </div>
 
 <style>

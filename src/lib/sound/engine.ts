@@ -43,6 +43,9 @@ type CueName =
   | 'send'
   | 'shutter'
   | 'dismiss'
+  | 'thinking'
+  | 'reply'
+  | 'noted'
   | 'deny';
 
 let ctx: AudioContext | null = null;
@@ -388,6 +391,32 @@ const cues: Record<CueName, (ac: AudioContext, t: number) => void> = {
   dismiss: (ac, t) => {
     sweep(ac, t, { from: 2600, to: 700, dur: 0.2, gain: 0.055, q: 1 });
     tone(ac, Fs5, t + 0.02, { gain: 0.06, attack: 0.006, release: 0.22, weight: 0.22, air: 0, send: 0.5 });
+  },
+  /*
+    The assistant's three cues.
+
+    Built from the same tone()/sweep()/sub() voices as everything else, in the
+    same D pentatonic, at the same gains — an assistant that announced itself
+    in a different sound language would read as a bolted-on product rather
+    than part of the system. `thinking` is the quietest cue in the whole set
+    because it fires while you wait, and `reply` is a single tone for exactly
+    the reason open/home are: two notes would be a jingle.
+  */
+  // the question going out: a short rise of air, barely pitched
+  thinking: (ac, t) => {
+    sweep(ac, t, { from: 700, to: 2400, dur: 0.3, gain: 0.035, q: 0.7 });
+    tone(ac, D5, t + 0.03, { gain: 0.045, attack: 0.02, release: 0.3, from: 0.92, weight: 0.2, air: 0.02, send: 0.6 });
+  },
+  // the answer landing: one tone settling, air falling in behind it
+  reply: (ac, t) => {
+    sweep(ac, t, { from: 2200, to: 780, dur: 0.28, gain: 0.05, q: 0.8 });
+    tone(ac, A4, t + 0.02, { gain: 0.085, attack: 0.014, release: 0.5, from: 1.06, weight: 0.32, presence: 0.1, air: 0.03 });
+    sub(ac, t, { freq: 52, dur: 0.26, gain: 0.05 });
+  },
+  // something written down: the smallest possible acknowledgement
+  noted: (ac, t) => {
+    noise(ac, t, { gain: 0.028, dur: 0.02, center: 5000, q: 0.9 });
+    tone(ac, D6, t, { gain: 0.045, attack: 0.005, release: 0.16, weight: 0.14, presence: 0.12, air: 0, send: 0.4 });
   },
   // one low tone sagging under itself — a refusal, never an alarm
   deny: (ac, t) => {

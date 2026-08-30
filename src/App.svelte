@@ -17,7 +17,9 @@
   const occluded = $derived(shell.state === 'app');
 
   $effect(() => {
-    document.documentElement.dataset.effects = settings.current.richEffects ? 'full' : 'calm';
+    // one attribute the whole stylesheet keys off, rather than a prop threaded
+    // through every component that happens to draw something
+    document.documentElement.dataset.gfx = String(settings.current.graphics);
   });
 
   // Nothing behind the lock belongs to anyone until someone is signed in, so

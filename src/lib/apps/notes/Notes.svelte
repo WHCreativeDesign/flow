@@ -1,6 +1,7 @@
 <script lang="ts">
   import { instance } from '../../sync';
   import { play } from '../../sound/engine';
+  import Pane from '../../components/Pane.svelte';
 
   interface Note {
     id: string;
@@ -72,6 +73,7 @@
 </script>
 
 <div class="fl-app">
+<Pane key={openId ?? '#list'} direction={openId ? 1 : -1}>
   {#if openNote}
     <div class="fl-app-head">
       <button class="fl-btn quiet" onclick={() => { openId = null; play('tap'); }} aria-label="back to all notes">
@@ -122,6 +124,7 @@
       </div>
     {/if}
   {/if}
+</Pane>
 </div>
 
 <style>

@@ -3,6 +3,8 @@
   import Reveal from '../../ai/Reveal.svelte';
   import Orb from '../../ai/Orb.svelte';
   import { play } from '../../sound/engine';
+  import Pane from '../../components/Pane.svelte';
+  import { listPhotoKeys } from '../../ai/context';
 
   /*
     The assistant.
@@ -23,6 +25,19 @@
   let composer: HTMLTextAreaElement | undefined = $state();
   let showMemories = $state(false);
   let pinned = true;
+  let photoKeys = $state<string[]>([]);
+  let picking = $state(false);
+
+  $effect(() => {
+    void listPhotoKeys().then((k) => (photoKeys = k));
+  });
+
+  function photoLabel(key: string) {
+    const n = Number(key);
+    return Number.isFinite(n)
+      ? new Date(n).toLocaleDateString([], { month: 'short', day: 'numeric' })
+      : 'photo';
+  }
 
   $effect(() => {
     void assistant.loadChats();
@@ -59,7 +74,8 @@
     if (!text || assistant.thinking) return;
     draft = '';
     queueMicrotask(grow);
-    play('send');
+    // no cue here: ask() plays 'thinking' as the request leaves, and two cues
+    // on one action reads as a stutter
     await assistant.ask(text);
   }
 
@@ -80,6 +96,7 @@
 </script>
 
 <div class="fl-app chat">
+<Pane key={assistant.openId ?? '#list'} direction={assistant.openId ? 1 : -1}>
   {#if assistant.openId === null}
     <!-- history -->
     <div class="fl-app-head">
@@ -204,7 +221,36 @@
     </div>
 
     <div class="composer-wrap">
+      {#if picking && photoKeys.length}
+        <div class="picker measure">
+          {#each photoKeys.slice(0, 12) as k (k)}
+            <button
+              class="pk"
+              class:on={assistant.attached.includes(k)}
+              onclick={() => { assistant.toggleAttach(k); play('toggle'); }}
+            >{photoLabel(k)}</button>
+          {/each}
+        </div>
+      {/if}
+
+      {#if assistant.attached.length}
+        <div class="attached measure">
+          {assistant.attached.length} photo{assistant.attached.length === 1 ? '' : 's'} attached
+          <button class="clear" onclick={() => { assistant.clearAttached(); play('toggle'); }}>clear</button>
+        </div>
+      {/if}
+
       <div class="composer measure">
+        {#if photoKeys.length}
+          <button
+            class="clip"
+            class:on={picking}
+            onclick={() => { picking = !picking; play('tap'); }}
+            aria-label="attach a photo"
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 12.5l5.5-5.5a3 3 0 014.2 4.2l-7.4 7.4a5 5 0 01-7-7l7.4-7.4" /></svg>
+          </button>
+        {/if}
         <textarea
           bind:this={composer}
           bind:value={draft}
@@ -220,6 +266,7 @@
       </div>
     </div>
   {/if}
+</Pane>
 </div>
 
 <style>
@@ -344,6 +391,16 @@
     display: flex;
     gap: 12px;
     padding: 12px 2px;
+    /* each turn arrives rather than appearing; the question and the answer
+       use the same curve as everything else the shell moves */
+    animation: turn-in 0.42s var(--ease-rise) both;
+  }
+  @keyframes turn-in {
+    from { opacity: 0; transform: translate3d(0, 10px, 0); }
+    to { opacity: 1; transform: none; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .turn { animation: none; }
   }
   /* the question: small, contained, right — it is an aside, not the document */
   .turn.user {
@@ -420,6 +477,72 @@
   /* ---- composer ---- */
   .composer-wrap {
     padding-top: 8px;
+  }
+  .picker {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    padding-bottom: 8px;
+  }
+  .pk {
+    font-family: var(--font-body);
+    font-size: 11px;
+    font-weight: 600;
+    padding: 6px 11px;
+    border-radius: 999px;
+    cursor: pointer;
+    color: var(--deep);
+    border: 1px solid rgba(255, 255, 255, 0.8);
+    background: linear-gradient(168deg, rgba(255, 255, 255, 0.66), rgba(226, 245, 253, 0.45));
+  }
+  .pk.on {
+    border-color: hsl(205 80% 60%);
+    background: linear-gradient(168deg, hsl(200 92% 90%), hsl(206 84% 82%));
+  }
+  .attached {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding-bottom: 6px;
+    font-family: var(--font-body);
+    font-size: 11.5px;
+    color: var(--deep);
+    opacity: 0.7;
+  }
+  .clear {
+    background: none;
+    border: none;
+    cursor: pointer;
+    font-family: var(--font-body);
+    font-size: 11.5px;
+    text-decoration: underline;
+    color: var(--deep);
+  }
+  .clip {
+    flex: none;
+    width: 30px;
+    height: 30px;
+    margin-bottom: 3px;
+    border: none;
+    border-radius: 50%;
+    background: none;
+    cursor: pointer;
+    display: grid;
+    place-items: center;
+    opacity: 0.5;
+  }
+  .clip.on,
+  .clip:hover {
+    opacity: 1;
+  }
+  .clip svg {
+    width: 17px;
+    height: 17px;
+    stroke: var(--deep);
+    stroke-width: 1.8;
+    fill: none;
+    stroke-linecap: round;
+    stroke-linejoin: round;
   }
   .composer {
     display: flex;

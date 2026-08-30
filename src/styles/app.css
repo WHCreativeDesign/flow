@@ -188,3 +188,47 @@
   outline: 3px solid rgba(53, 169, 236, 0.55);
   outline-offset: 2px;
 }
+
+/*
+  ============================================================
+  Graphics tier 1 — low.
+
+  The contract: identical animations, identical gradients, flat visuals, no
+  idle movement, fewer objects.
+
+  So this block never touches a transition or a keyframe the person triggered.
+  It removes two things only:
+
+    idle loops   an animation nobody asked for is the one cost that never
+                 ends — it pins a promoted layer and re-composites forever.
+    depth        shadows and insets are per-frame blur work on a weak GPU,
+                 and they are decoration, not information.
+
+  Gradients stay exactly as they are. They rasterise once and are then only
+  moved, so they are nearly free — and they are what makes flow look like
+  flow. Dropping them would produce a different product, not a faster one.
+  ============================================================
+*/
+html[data-gfx='1'] .fl-glass,
+html[data-gfx='1'] .fl-btn,
+html[data-gfx='1'] .fl-round,
+html[data-gfx='1'] .fl-input,
+html[data-gfx='1'] .fl-textarea,
+html[data-gfx='1'] .sheet {
+  box-shadow: none;
+}
+
+/* Idle loops only. `alternate`/`infinite` animations are ambient by
+   definition; one-shot entrances and transitions are left alone. */
+html[data-gfx='1'] .orb,
+html[data-gfx='1'] .bk,
+html[data-gfx='1'] .aurora,
+html[data-gfx='1'] .caustics {
+  animation: none !important;
+  will-change: auto;
+}
+
+/* Tier 2 keeps the motion but stops paying for permanent layer promotion. */
+html[data-gfx='2'] .bk {
+  will-change: auto;
+}

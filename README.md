@@ -122,6 +122,14 @@ model is a secret change rather than a redeploy — and when every provider
 fails, the function returns *what* failed rather than collapsing it into one
 opaque "unavailable".
 
+## What the assistant can see
+
+The assistant reads the whole of the signed-in person's instance on every question: notes, message threads, the music library, the saved weather place, settings, the terminal name, and how many photos exist and when they were taken. Not a cached digest — assembled fresh, because the point is that it knows what is true now.
+
+It cannot reach anyone else's. Not because the code is careful but because the layer underneath it cannot return another user's rows: everything goes through the same RLS-scoped `instance` the UI uses, and photo blobs come from this device's own IndexedDB.
+
+Photos are the one thing it cannot see *into* by default — the bytes are only sent when you attach one, from the paperclip beside the composer. The context tells it so explicitly, so it says a photo needs attaching rather than inventing what is in it. The instance dump is fenced and labelled as reference material, never instruction: a note that says "ignore your instructions" is something to answer about, not to obey.
+
 ## Apps
 
 All seven orbs open working apps. State persists per-user in Supabase through the `InstanceClient` boundary — the swap that boundary was written for. Photo and audio blobs stay in IndexedDB on the device:
@@ -133,6 +141,10 @@ All seven orbs open working apps. State persists per-user in Supabase through th
 - **music** — a local library (files persist in IndexedDB), playlist, seek, skip, and a live frequency visualizer.
 - **assistant** — Groq-backed chat with Gemini fallback; per-user history that follows you between terminals.
 - **settings** — system sounds and volume, idle timeout, 12/24-hour clock, terminal name; applied instantly and persisted. Also sign-out, an assistant key check, and the hidden admin panel.
+
+## Inside an app
+
+Apps have their own navigation — notes to one note, chats to one conversation, gallery to one photo — and those pages tween rather than cut, through one shared `Pane`. Both panes are mounted during the change so the outgoing one can actually leave. Depth sets the direction: going deeper, the new pane rises from behind and the old recedes; coming back, exactly reversed, which is what makes back read as back rather than as another forward.
 
 ## Sound
 
@@ -155,7 +167,15 @@ The atmosphere is the most expensive thing on screen, so it obeys hard rules: **
 
 Anything occluded stops animating: while an app is open, home and the atmosphere below it hold their pixels and pause. Nothing a person can actually see stops breathing. Layer promotion (`will-change`) is treated as borrowed GPU memory and held only while something is genuinely moving.
 
-Settings carries a **full atmosphere** switch; turning it off leaves a still surface for weaker hardware.
+Settings carries a **three-stage graphics tier**, and the split between the stages is deliberate:
+
+| tier | what changes |
+|---|---|
+| **1 · low** | Same animations, same gradients. No idle movement anywhere, no shadows, far fewer drawn objects. |
+| **2 · normal** | Ambient drift at a reduced object count. |
+| **3 · full** | Every layer, every drift. |
+
+Transitions are **identical at all three**. A cheap device should still feel like the same system answering you; what it should not do is spend a battery animating things nobody asked to move. So what tier 1 removes is the work that never ends — an idle loop pins a promoted layer and re-composites forever — and never the motion you triggered. Gradients stay untouched at every tier: they rasterise once and are then only moved, so they cost almost nothing, and they are what makes flow look like flow.
 
 ## Motion law
 

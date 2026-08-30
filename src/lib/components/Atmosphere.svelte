@@ -163,14 +163,51 @@
     will-change: auto;
   }
 
-  :global(html[data-effects='calm']) .aurora,
-  :global(html[data-effects='calm']) .bloom-streak,
-  :global(html[data-effects='calm']) .caustics,
-  :global(html[data-effects='calm']) .bk {
-    animation: none;
+  /*
+    Tier 2 — normal. Every gradient still draws; half the bokeh stops being
+    drawn at all. Object count is the cheapest thing to give up, because each
+    one is an extra layer the compositor carries on every single frame.
+  */
+  :global(html[data-gfx='2']) .bk4,
+  :global(html[data-gfx='2']) .bk6,
+  :global(html[data-gfx='2']) .bk8 {
+    display: none;
+  }
+  :global(html[data-gfx='2']) .caustics {
+    animation-duration: 48s;
+  }
+
+  /*
+    Tier 1 — low. The rule is: same gradients, no idle movement, fewer objects.
+
+    So the sky, aurora, streak and their gradients all still paint — the look
+    survives — but nothing loops. An idle animation is the one cost that never
+    ends: it holds a promoted layer and re-composites forever, whether or not
+    anyone is looking at it. That is what a weak device cannot afford, and it
+    is also the part nobody asked for. Transitions the person actually
+    triggers are untouched.
+  */
+  :global(html[data-gfx='1']) .aurora,
+  :global(html[data-gfx='1']) .bloom-streak,
+  :global(html[data-gfx='1']) .caustics,
+  :global(html[data-gfx='1']) .bk {
+    animation: none !important;
     will-change: auto;
   }
-  :global(html[data-effects='calm']) .caustics {
+  /* the two most expensive full-screen layers, and the ones that read as
+     texture rather than as colour — the gradients below them remain */
+  :global(html[data-gfx='1']) .caustics,
+  :global(html[data-gfx='1']) .grain {
+    display: none;
+  }
+  /* one bokeh object instead of eight, kept so the depth does not read flat */
+  :global(html[data-gfx='1']) .bk2,
+  :global(html[data-gfx='1']) .bk3,
+  :global(html[data-gfx='1']) .bk4,
+  :global(html[data-gfx='1']) .bk5,
+  :global(html[data-gfx='1']) .bk6,
+  :global(html[data-gfx='1']) .bk7,
+  :global(html[data-gfx='1']) .bk8 {
     display: none;
   }
 </style>
