@@ -20,6 +20,8 @@ There is no desktop, no windows, no z-index stacking. Any surface running flow i
 
 Exiting is interactive. On touch the bottom edge is a gesture bar: drag up from it and the app follows your finger, shrinking back toward the orb it came from. Release decides the way a physical object would — by where the gesture is *heading*, not only where it stopped. A fast flick dismisses from an inch up; the same inch dragged slowly settles back. Velocity also sets the duration of the finish. Pointer devices get a **home** key in that same position instead — a drag is a poor gesture with a mouse, so the control changes but its place does not.
 
+Every way out collapses. The home key and Escape run the same reverse bloom as the drag — the card shrinks back into the orb it grew from, casting a shadow the whole way down — just on a fixed duration, since a click carries no velocity to read. Nothing in flow cuts.
+
 The signature gesture is **press → release → bloom**: an orb compresses under the finger (~0.83, fast ease-in), then expands from its exact origin point to fill the screen. Never slide, never cut, never cross-fade.
 
 ## The home pages
@@ -47,7 +49,16 @@ All six orbs open working apps. State persists on the instance (localStorage for
 
 ## Sound
 
-All cues are synthesized in `src/lib/sound/engine.ts` — no audio assets. The palette is Windows-7-Aero-inspired struck glass: two-partial bar voices (fundamental + 2.76× inharmonic partial) through a lowpass and a small generated hall, phrased in open fifths in A. Wake, press, bloom, home, send, shutter, toggle, and a gentle two-note refusal. Volume and mute live in settings.
+All cues are synthesized in `src/lib/sound/engine.ts` — no audio assets. The palette takes the PS5 system UI as its reference: **air first, tone second.** Cues are bandpass-filtered noise sweeps with a low sine swell under them, and where a pitch appears it is a single clean harmonic voice. Never two.
+
+That last rule is the whole design. A two-note cue reads as a jingle, and a jingle turns every app launch into an announcement — so opening is one gesture of air rising with one tone settling into it, and closing is that same gesture inverted. Not a different tune, the same motion backwards.
+
+Two cues are deliberately exempt and keep the older struck-glass voice — two-partial bar tones (fundamental + the 2.76× inharmonic partial of a struck bar) in A major:
+
+- **wake** — the startup sound. This is the system coming to life, and the palette around it is anonymous on purpose so this one still lands.
+- **page** — the glance ↔ field turn.
+
+Those two run through a 1.4s hall; everything else sits in a 0.5s room, close and dry. Volume and mute live in settings.
 
 ## Performance contract
 

@@ -42,11 +42,15 @@ class Shell {
     this.#armIdleTimer();
   }
 
-  /** app → home: the one universal swipe gesture. Apps never own navigation. */
+  /* app → home: the one universal swipe gesture. Apps never own navigation.
+
+     The close cue is played by AppView at the moment the collapse starts, not
+     here — goHome runs when the animation has already finished unmounting, so
+     firing it here put the sound up to a third of a second behind the motion
+     that caused it. */
   goHome() {
     this.state = 'home';
     this.activeApp = null;
-    play('home');
     this.#armIdleTimer();
   }
 
