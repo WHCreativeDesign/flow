@@ -95,6 +95,28 @@
     </section>
   </div>
 
+  <!--
+    Pointer devices get arrows. The pager is a drag, and a drag is a poor
+    gesture with a mouse — the same reasoning that gives an open app a home
+    key instead of a gesture bar. Touch never sees these; it throws the page.
+  -->
+  <button
+    class="arrow left"
+    onclick={() => go(page - 1)}
+    disabled={page === 0}
+    aria-label="previous page"
+  >
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7" /></svg>
+  </button>
+  <button
+    class="arrow right"
+    onclick={() => go(page + 1)}
+    disabled={page === PAGES - 1}
+    aria-label="next page"
+  >
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5l7 7-7 7" /></svg>
+  </button>
+
   <div class="dots" role="tablist" aria-label="home pages">
     {#each { length: PAGES } as _, i (i)}
       <button
@@ -110,6 +132,65 @@
 </div>
 
 <style>
+  .arrow {
+    position: absolute;
+    top: 50%;
+    z-index: 6;
+    display: none;
+    place-items: center;
+    width: 44px;
+    height: 44px;
+    margin-top: -22px;
+    border-radius: 50%;
+    cursor: pointer;
+    border: 1px solid rgba(255, 255, 255, 0.8);
+    background:
+      radial-gradient(ellipse 70% 50% at 30% 18%, rgba(255, 255, 255, 0.95) 0%, rgba(255, 255, 255, 0) 60%),
+      linear-gradient(172deg, rgba(255, 255, 255, 0.72), rgba(232, 248, 253, 0.48));
+    box-shadow: inset 0 1.5px 0 rgba(255, 255, 255, 1), 0 6px 16px rgba(13, 63, 143, 0.12);
+    transition: transform 0.3s var(--ease-overshoot), opacity 0.26s ease;
+  }
+  .arrow.left {
+    left: 18px;
+  }
+  .arrow.right {
+    right: 18px;
+  }
+  .arrow svg {
+    width: 18px;
+    height: 18px;
+    stroke: var(--deep);
+    stroke-width: 2;
+    fill: none;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+  /* At an end the arrow stays in place rather than disappearing: a control
+     that vanishes moves the other one, and a moving target is worse than a
+     dim one. */
+  .arrow:disabled {
+    opacity: 0.24;
+    cursor: default;
+  }
+  .arrow:not(:disabled):hover {
+    transform: scale(1.06);
+  }
+  .arrow:not(:disabled):active {
+    transform: scale(0.92);
+    transition-duration: var(--press-duration);
+    transition-timing-function: var(--ease-press);
+  }
+  @media (pointer: fine) {
+    .arrow {
+      display: grid;
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .arrow {
+      transition: none;
+    }
+  }
+
   .home {
     position: fixed;
     inset: 0;

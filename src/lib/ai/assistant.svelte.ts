@@ -1,6 +1,6 @@
 import { supabase, FUNCTIONS_URL, ANON_KEY, readToken } from '../sync/supabase';
 import { auth } from '../auth.svelte';
-import { buildContext, photoByKey } from './context';
+import { buildContext } from './context';
 import { play } from '../sound/engine';
 
 /*
@@ -29,6 +29,18 @@ export interface ChatMessage {
   createdAt: string;
   /** only a reply that just arrived animates; history renders instantly */
   fresh?: boolean;
+  /** false while tokens are still landing, so the reveal knows not to finish */
+  complete?: boolean;
+}
+
+export interface Attachment {
+  id: string;
+  /** object URL, for the preview only */
+  url: string;
+  /** base64 without the data: prefix, for the provider */
+  data: string;
+  mime: string;
+  name: string;
 }
 
 export interface Memory {
@@ -103,7 +115,8 @@ class Assistant {
       content: m.content as string,
       model: m.model as string | null,
       createdAt: m.created_at as string,
-      fresh: false
+      fresh: false,
+      complete: true
     }));
   }
 
@@ -140,16 +153,34 @@ class Assistant {
     this.error = null;
   }
 
-  /** photo keys attached to the next question, newest-first from the gallery */
-  attached = $state<string[]>([]);
+  /*
+    Images riding along with the next question. Each carries both an object URL
+    for the preview and the base64 the provider needs — a preview built from
+    the same bytes that get sent is the only way the thumbnail cannot lie about
+    what was attached.
+  */
+  attached = $state<Attachment[]>([]);
 
-  toggleAttach(key: string) {
-    this.attached = this.attached.includes(key)
-      ? this.attached.filter((k) => k !== key)
-      : [...this.attached, key].slice(-3);
+  attach(a: Attachment) {
+    if (this.attached.some((x) => x.id === a.id)) return;
+    // three is the provider-side cap; dropping the oldest beats a silent no-op
+    const next = [...this.attached, a];
+    for (const dropped of next.slice(0, Math.max(0, next.length - 3))) {
+      URL.revokeObjectURL(dropped.url);
+    }
+    this.attached = next.slice(-3);
+  }
+
+  detach(id: string) {
+    const gone = this.attached.find((a) => a.id === id);
+    if (gone) URL.revokeObjectURL(gone.url);
+    this.attached = this.attached.filter((a) => a.id !== id);
   }
 
   clearAttached() {
+    // object URLs are held by the document until revoked, so a chat session of
+    // attaching and clearing would leak every blob it ever previewed
+    for (const a of this.attached) URL.revokeObjectURL(a.url);
     this.attached = [];
   }
 
@@ -172,7 +203,8 @@ class Assistant {
       role: 'user',
       content: body,
       createdAt: new Date().toISOString(),
-      fresh: false
+      fresh: false,
+      complete: true
     };
     this.messages = [...this.messages, local];
 
@@ -184,11 +216,9 @@ class Assistant {
       the same RLS-scoped layer as the UI, so it can only ever contain this
       user's own material.
     */
-    const [instanceContext, images] = await Promise.all([
-      buildContext(),
-      Promise.all(this.attached.map((k) => photoByKey(k))).then((r) => r.filter(Boolean))
-    ]);
-    this.attached = [];
+    const instanceContext = await buildContext();
+    const images = this.attached.map((a) => ({ data: a.data, mime: a.mime }));
+    this.clearAttached();
 
     await supabase()
       .from('chat_messages')
@@ -213,27 +243,119 @@ class Assistant {
           messages: history,
           mode: 'chat',
           instance: instanceContext,
-          images
+          images,
+          stream: true
         })
       });
-      const data = await res.json();
 
-      if (!res.ok || !data.reply) {
+      if (!res.ok || !res.body) {
+        const data = await res.json().catch(() => ({}));
         this.error = data.detail?.join(' · ') ?? data.error ?? `HTTP ${res.status}`;
         play('deny');
         return;
       }
 
-      const reply: ChatMessage = {
-        id: crypto.randomUUID(),
-        role: 'assistant',
-        content: data.reply,
-        model: data.model,
-        createdAt: new Date().toISOString(),
-        fresh: true
+      /*
+        Server-sent events. The reply row is inserted empty and then grown in
+        place, so the reveal has something to animate into from the first
+        token rather than waiting for the whole answer.
+      */
+      const replyId = crypto.randomUUID();
+      let started = false;
+      let text = '';
+      let model: string | null = null;
+      let data: { reply?: string; remembered?: string[] } = {};
+
+      const append = (delta: string) => {
+        text += delta;
+        if (!started) {
+          started = true;
+          this.thinking = false;
+          play('reply');
+          this.messages = [
+            ...this.messages,
+            {
+              id: replyId,
+              role: 'assistant',
+              content: text,
+              model,
+              createdAt: new Date().toISOString(),
+              fresh: true,
+              complete: false
+            }
+          ];
+          return;
+        }
+        this.messages = this.messages.map((m) => (m.id === replyId ? { ...m, content: text } : m));
       };
-      this.messages = [...this.messages, reply];
-      play('reply');
+
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+      let streamError: string | null = null;
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+
+        // an event ends at a blank line, and a chunk can split one in half
+        let cut: number;
+        while ((cut = buffer.indexOf('\n\n')) !== -1) {
+          const raw = buffer.slice(0, cut);
+          buffer = buffer.slice(cut + 2);
+          for (const line of raw.split('\n')) {
+            if (!line.startsWith('data:')) continue;
+            const payload = line.slice(5).trim();
+            if (!payload) continue;
+            try {
+              const evt = JSON.parse(payload);
+              if (evt.model) model = evt.model;
+              if (evt.delta) append(evt.delta);
+              if (evt.error) streamError = String(evt.error);
+              if (evt.done) data = evt;
+            } catch {
+              /* partial or keepalive frame */
+            }
+          }
+        }
+      }
+
+      if (streamError && !text) {
+        this.error = streamError;
+        play('deny');
+        return;
+      }
+
+      // the server's cleaned text is authoritative — it has the memory tags
+      // stripped, including any the hold-back logic trimmed at the very end
+      const finalText = (data.reply ?? text).trim();
+      if (!finalText) {
+        this.error = streamError ?? 'the assistant returned nothing';
+        play('deny');
+        return;
+      }
+
+      if (!started) {
+        this.thinking = false;
+        play('reply');
+        this.messages = [
+          ...this.messages,
+          {
+            id: replyId,
+            role: 'assistant',
+            content: finalText,
+            model,
+            createdAt: new Date().toISOString(),
+            fresh: true,
+            complete: true
+          }
+        ];
+      } else {
+        this.messages = this.messages.map((m) =>
+          m.id === replyId ? { ...m, content: finalText, model, complete: true } : m
+        );
+      }
 
       // surfaced rather than silent: being remembered without being told is
       // the part of assistant memory people object to
@@ -249,8 +371,8 @@ class Assistant {
         chat_id: chatId,
         user_id: auth.user.id,
         role: 'assistant',
-        content: data.reply,
-        model: data.model
+        content: finalText,
+        model
       });
       await supabase().from('chats').update({ updated_at: new Date().toISOString() }).eq('id', chatId);
     } catch (e) {
@@ -287,7 +409,7 @@ class Assistant {
     this.error = null;
     this.memories = [];
     this.justRemembered = [];
-    this.attached = [];
+    this.clearAttached();
   }
 }
 

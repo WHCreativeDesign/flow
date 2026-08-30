@@ -4,7 +4,9 @@
   import Orb from '../../ai/Orb.svelte';
   import { play } from '../../sound/engine';
   import Pane from '../../components/Pane.svelte';
-  import { listPhotoKeys } from '../../ai/context';
+  import { listPhotoKeys, photoBlob, encodeImage } from '../../ai/context';
+  import SendMorph from '../../ai/SendMorph.svelte';
+  import { tick } from 'svelte';
 
   /*
     The assistant.
@@ -27,6 +29,12 @@
   let pinned = true;
   let photoKeys = $state<string[]>([]);
   let picking = $state(false);
+  let fileInput: HTMLInputElement | undefined = $state();
+  let composerBox: HTMLDivElement | undefined = $state();
+  /* while set, the real bubble is held invisible and the flown clone stands
+     in for it — two copies of the same message on screen would read as a
+     duplicate rather than as one object moving */
+  let morph = $state<{ from: DOMRect; to: DOMRect; text: string } | null>(null);
 
   $effect(() => {
     void listPhotoKeys().then((k) => (photoKeys = k));
@@ -37,6 +45,31 @@
     return Number.isFinite(n)
       ? new Date(n).toLocaleDateString([], { month: 'short', day: 'numeric' })
       : 'photo';
+  }
+
+  /* Both sources end in the same place: an object URL for the preview and the
+     base64 the provider gets, built from the same bytes so the thumbnail
+     cannot misrepresent what was actually sent. */
+  async function attachBlob(id: string, blob: Blob, name: string) {
+    const { data, mime } = await encodeImage(blob);
+    assistant.attach({ id, url: URL.createObjectURL(blob), data, mime, name });
+    play('toggle');
+  }
+
+  async function attachFromGallery(key: string) {
+    const blob = await photoBlob(key);
+    if (blob) await attachBlob(`cam:${key}`, blob, photoLabel(key));
+  }
+
+  async function attachFromComputer(e: Event) {
+    const input = e.currentTarget as HTMLInputElement;
+    for (const file of Array.from(input.files ?? []).slice(0, 3)) {
+      if (!file.type.startsWith('image/')) continue;
+      await attachBlob(`file:${file.name}:${file.lastModified}`, file, file.name);
+    }
+    // reset so picking the same file twice still fires a change event
+    input.value = '';
+    picking = false;
   }
 
   $effect(() => {
@@ -72,11 +105,29 @@
   async function send() {
     const text = draft.trim();
     if (!text || assistant.thinking) return;
+
+    // measured before the field empties, while the composer is still its
+    // sent-message size
+    const fromRect = composerBox?.getBoundingClientRect() ?? null;
+
     draft = '';
     queueMicrotask(grow);
     // no cue here: ask() plays 'thinking' as the request leaves, and two cues
     // on one action reads as a stutter
-    await assistant.ask(text);
+    const pending = assistant.ask(text);
+
+    if (fromRect) {
+      // the destination only exists once the bubble has been laid out, so the
+      // flight is measured from the real thing rather than an estimate
+      await tick();
+      requestAnimationFrame(() => {
+        const nodes = scroller?.querySelectorAll('.turn.user .said');
+        const last = nodes?.[nodes.length - 1] as HTMLElement | undefined;
+        if (last) morph = { from: fromRect, to: last.getBoundingClientRect(), text };
+      });
+    }
+
+    await pending;
   }
 
   function key(e: KeyboardEvent) {
@@ -85,6 +136,13 @@
       void send();
     }
   }
+
+  const lastUserIndex = $derived.by(() => {
+    for (let i = assistant.messages.length - 1; i >= 0; i--) {
+      if (assistant.messages[i].role === 'user') return i;
+    }
+    return -1;
+  });
 
   function when(iso: string) {
     const d = new Date(iso);
@@ -101,7 +159,7 @@
     <!-- history -->
     <div class="fl-app-head">
       <div>
-        <h2 class="fl-app-title">assistant</h2>
+        <h2 class="fl-app-title">flow</h2>
         <p class="fl-app-sub">
           {assistant.chats.length} conversation{assistant.chats.length === 1 ? '' : 's'}
           {#if assistant.memories.length}· {assistant.memories.length} remembered{/if}
@@ -122,7 +180,7 @@
     {#if showMemories}
       <div class="memories fl-glass">
         <div class="mem-head">
-          <span>what the assistant remembers about you</span>
+          <span>what flow remembers about you</span>
           <button class="fl-btn quiet sm" onclick={() => { play('deny'); void assistant.forgetAll(); }}>
             forget all
           </button>
@@ -139,8 +197,8 @@
     <div class="fl-scroll list">
       {#if assistant.chats.length === 0}
         <div class="fl-empty">
-          <span class="big">nothing asked yet</span>
-          <span>start a chat and it will be here on every screen you sign in on</span>
+          <span class="big">ask flow anything</span>
+          <span>chats are yours alone and follow you to every screen you sign in on</span>
         </div>
       {:else}
         {#each assistant.chats as c (c.id)}
@@ -150,7 +208,7 @@
               <span class="w">{when(c.updatedAt)}</span>
             </button>
             <button
-              class="fl-round del"
+              class="fl-btn quiet fl-round del"
               aria-label="delete chat"
               onclick={() => { play('toggle'); void assistant.deleteChat(c.id); }}
             >
@@ -169,10 +227,10 @@
 
     <div class="fl-scroll thread" bind:this={scroller} onscroll={() => (pinned = atBottom())}>
       <div class="measure">
-        {#each assistant.messages as m (m.id)}
+        {#each assistant.messages as m, i (m.id)}
           {#if m.role === 'user'}
             <div class="turn user">
-              <div class="said">{m.content}</div>
+              <div class="said" class:flying={morph && i === lastUserIndex}>{m.content}</div>
             </div>
           {:else}
             <div class="turn bot">
@@ -181,6 +239,7 @@
                 <Reveal
                   text={m.content}
                   instant={!m.fresh}
+                  complete={m.complete !== false}
                   onprogress={() => follow(false)}
                 />
               </div>
@@ -212,7 +271,7 @@
           <div class="turn bot">
             <div class="mark"></div>
             <div class="err">
-              <strong>the assistant could not answer</strong>
+              <strong>flow could not answer</strong>
               <span>{assistant.error}</span>
             </div>
           </div>
@@ -221,26 +280,46 @@
     </div>
 
     <div class="composer-wrap">
-      {#if picking && photoKeys.length}
+      {#if picking}
         <div class="picker measure">
+          <button class="pk from-file" onclick={() => { fileInput?.click(); play('tap'); }}>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 16V4M7 9l5-5 5 5M4 17v2a1 1 0 001 1h14a1 1 0 001-1v-2" /></svg>
+            <span>add from computer</span>
+          </button>
           {#each photoKeys.slice(0, 12) as k (k)}
-            <button
-              class="pk"
-              class:on={assistant.attached.includes(k)}
-              onclick={() => { assistant.toggleAttach(k); play('toggle'); }}
-            >{photoLabel(k)}</button>
+            <button class="pk shot" onclick={() => attachFromGallery(k)} aria-label={`attach photo from ${photoLabel(k)}`}>
+              <span class="pk-date">{photoLabel(k)}</span>
+            </button>
+          {/each}
+          {#if !photoKeys.length}
+            <span class="pk-empty">no photos on this device yet</span>
+          {/if}
+        </div>
+      {/if}
+
+      <input
+        bind:this={fileInput}
+        type="file"
+        accept="image/*"
+        multiple
+        onchange={attachFromComputer}
+        hidden
+      />
+
+      {#if assistant.attached.length}
+        <!-- the preview is built from the same bytes that get sent, so it
+             cannot show one thing and upload another -->
+        <div class="thumbs measure">
+          {#each assistant.attached as a (a.id)}
+            <div class="thumb">
+              <img src={a.url} alt={a.name} />
+              <button class="thumb-x" onclick={() => { assistant.detach(a.id); play('toggle'); }} aria-label={`remove ${a.name}`}>×</button>
+            </div>
           {/each}
         </div>
       {/if}
 
-      {#if assistant.attached.length}
-        <div class="attached measure">
-          {assistant.attached.length} photo{assistant.attached.length === 1 ? '' : 's'} attached
-          <button class="clear" onclick={() => { assistant.clearAttached(); play('toggle'); }}>clear</button>
-        </div>
-      {/if}
-
-      <div class="composer measure">
+      <div class="composer measure" bind:this={composerBox}>
         {#if photoKeys.length}
           <button
             class="clip"
@@ -267,6 +346,10 @@
     </div>
   {/if}
 </Pane>
+
+{#if morph}
+  <SendMorph from={morph.from} to={morph.to} text={morph.text} ondone={() => (morph = null)} />
+{/if}
 </div>
 
 <style>
@@ -292,6 +375,13 @@
     display: flex;
     flex-direction: column;
     gap: 10px;
+  }
+  /* the same reading measure the thread uses — a row stretched across a wall
+     display puts the delete control a foot from the title it belongs to */
+  .list > * {
+    width: 100%;
+    max-width: 680px;
+    margin: 0 auto;
   }
   .row {
     display: flex;
@@ -326,14 +416,20 @@
     opacity: 0.55;
     flex-shrink: 0;
   }
+  /* fl-round is 46px, which is a primary-action size. A destructive action
+     tucked at the end of a list row should be smaller than the row's own
+     content, not larger. */
+  .del {
+    width: 34px;
+    height: 34px;
+    flex: none;
+  }
   .del svg {
     width: 15px;
     height: 15px;
-    stroke: var(--deep);
-    stroke-width: 1.7;
-    fill: none;
-    stroke-linecap: round;
-    stroke-linejoin: round;
+  }
+  .del:hover {
+    color: #b4225a;
   }
 
   .memories {
@@ -405,6 +501,11 @@
   /* the question: small, contained, right — it is an aside, not the document */
   .turn.user {
     justify-content: flex-end;
+  }
+  /* held invisible, not unmounted: the layout must stay exactly as measured
+     or the clone lands on a target that has since moved */
+  .said.flying {
+    visibility: hidden;
   }
   .said {
     max-width: 78%;
@@ -495,28 +596,71 @@
     border: 1px solid rgba(255, 255, 255, 0.8);
     background: linear-gradient(168deg, rgba(255, 255, 255, 0.66), rgba(226, 245, 253, 0.45));
   }
-  .pk.on {
-    border-color: hsl(205 80% 60%);
-    background: linear-gradient(168deg, hsl(200 92% 90%), hsl(206 84% 82%));
-  }
-  .attached {
-    display: flex;
+  .pk.from-file {
+    display: inline-flex;
     align-items: center;
-    gap: 8px;
-    padding-bottom: 6px;
+    gap: 6px;
+  }
+  .pk.from-file svg {
+    width: 13px;
+    height: 13px;
+    stroke: var(--deep);
+    stroke-width: 1.9;
+    fill: none;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+  .pk-empty {
     font-family: var(--font-body);
     font-size: 11.5px;
     color: var(--deep);
-    opacity: 0.7;
+    opacity: 0.5;
+    align-self: center;
   }
-  .clear {
-    background: none;
+
+  .thumbs {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    padding-bottom: 8px;
+  }
+  .thumb {
+    position: relative;
+    width: 62px;
+    height: 62px;
+    border-radius: 12px;
+    overflow: hidden;
+    border: 1px solid rgba(255, 255, 255, 0.9);
+    animation: thumb-in 0.34s var(--ease-overshoot) both;
+  }
+  .thumb img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+  }
+  .thumb-x {
+    position: absolute;
+    top: 2px;
+    right: 2px;
+    width: 19px;
+    height: 19px;
+    border-radius: 50%;
     border: none;
     cursor: pointer;
-    font-family: var(--font-body);
-    font-size: 11.5px;
-    text-decoration: underline;
-    color: var(--deep);
+    display: grid;
+    place-items: center;
+    font-size: 14px;
+    line-height: 1;
+    color: #fff;
+    background: rgba(13, 63, 143, 0.62);
+  }
+  @keyframes thumb-in {
+    from { opacity: 0; transform: scale(0.82); }
+    to { opacity: 1; transform: none; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .thumb { animation: none; }
   }
   .clip {
     flex: none;

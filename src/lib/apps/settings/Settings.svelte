@@ -40,6 +40,7 @@
       adminError = null;
       play('open');
       await loadAdminUsers();
+      await loadKeys();
     } else {
       adminError = 'wrong password';
       play('deny');
@@ -71,6 +72,7 @@
     try {
       await fn();
       await loadAdminUsers();
+      await loadKeys();
       play('tap');
     } catch (err) {
       opError = (err as Error).message;
@@ -95,8 +97,42 @@
       pwValue = '';
     });
 
+  /* ---- provider keys (admin) ---- */
+  interface KeyRow {
+    id: string;
+    provider: string;
+    masked: string;
+    label: string;
+    disabled: boolean;
+    last_error: string | null;
+  }
+  let keys = $state<KeyRow[]>([]);
+  let newProvider = $state<'groq' | 'gemini'>('groq');
+  let newKey = $state('');
+  let newKeyLabel = $state('');
+
+  async function loadKeys() {
+    keys = (await auth.adminListKeys()) as KeyRow[];
+  }
+
+  const addKey = () =>
+    run(async () => {
+      if (!newKey.trim()) throw new Error('paste a key first');
+      await auth.adminAddKey(newProvider, newKey.trim(), newKeyLabel.trim());
+      newKey = '';
+      newKeyLabel = '';
+      await loadKeys();
+    });
+
   /* ---- assistant setup check ---- */
-  let probe = $state<{ groqKey: boolean; geminiKey: boolean; groqModel: string; geminiModel: string } | null>(null);
+  let probe = $state<{
+    groqKey: boolean;
+    geminiKey: boolean;
+    groqKeys?: number;
+    geminiKeys?: number;
+    groqModel: string;
+    geminiModel: string;
+  } | null>(null);
   let probed = $state(false);
   async function checkAi() {
     probe = await assistant.probe();
@@ -284,13 +320,13 @@
       {#if probed}
         {#if probe}
           <p class="fine">
-            groq {probe.groqKey ? `ready · ${probe.groqModel}` : 'no key set'} ·
-            gemini {probe.geminiKey ? `ready · ${probe.geminiModel}` : 'no key set'}
+            groq {probe.groqKey ? `${probe.groqKeys ?? 1} key${(probe.groqKeys ?? 1) === 1 ? '' : 's'} · ${probe.groqModel}` : 'no key set'} ·
+            gemini {probe.geminiKey ? `${probe.geminiKeys ?? 1} key${(probe.geminiKeys ?? 1) === 1 ? '' : 's'} · ${probe.geminiModel}` : 'no key set'}
           </p>
           {#if !probe.groqKey && !probe.geminiKey}
             <p class="fine warn">
-              add GROQ_API_KEY (and optionally GEMINI_API_KEY) to the `ai` edge function's secrets
-              in Supabase. Keys never live in this app — it is a public build.
+                add a key below in the admin panel, or set GROQ_API_KEY on the `ai` edge
+              function. Keys never live in this app — it is a public build.
             </p>
           {/if}
         {:else}
@@ -331,6 +367,37 @@
         </div>
 
         {#if opError}<p class="fine warn">{opError}</p>{/if}
+
+        <div class="line sub keys-head">
+          <span class="line-label">provider keys</span>
+          <span class="fine">up to 5 each. tried in order; a 429 moves to the next.</span>
+        </div>
+
+        {#each keys as k (k.id)}
+          <div class="line user-row">
+            <span class="line-label grow">
+              {k.provider} · {k.label} · <code>{k.masked}</code>
+              {#if k.disabled}<em> · disabled</em>{/if}
+            </span>
+            <button class="fl-btn quiet sm" onclick={() => run(async () => { await auth.adminSetKeyEnabled(k.id, k.disabled); await loadKeys(); })}>
+              {k.disabled ? 'enable' : 'disable'}
+            </button>
+            <button class="fl-btn quiet sm" onclick={() => run(async () => { await auth.adminDeleteKey(k.id); await loadKeys(); })}>remove</button>
+          </div>
+          {#if k.last_error}
+            <p class="fine warn key-err">{k.last_error}</p>
+          {/if}
+        {/each}
+
+        <div class="line sub">
+          <select class="fl-input" bind:value={newProvider} aria-label="provider">
+            <option value="groq">groq</option>
+            <option value="gemini">gemini</option>
+          </select>
+          <input class="fl-input" bind:value={newKeyLabel} placeholder="label (optional)" />
+          <input class="fl-input" type="password" bind:value={newKey} placeholder="paste api key" />
+          <button class="fl-btn primary sm" onclick={addKey}>add key</button>
+        </div>
 
         <div class="line">
           <span class="fine">removing a user deletes everything of theirs.</span>
@@ -440,6 +507,21 @@
     background: linear-gradient(168deg, hsl(var(--hue) 88% 70%), hsl(var(--hue) 75% 50%));
   }
   .fine.warn { color: #8d1f48; }
+  .key-err {
+    margin: -2px 0 6px;
+    padding-left: 4px;
+    overflow-wrap: anywhere;
+  }
+  .keys-head {
+    margin-top: 14px;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 2px;
+  }
+  code {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 11.5px;
+  }
   .about-mark { cursor: default; user-select: none; }
 
   .panels {

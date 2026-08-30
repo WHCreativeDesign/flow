@@ -52,7 +52,7 @@ export const apps: FlowApp[] = [
   },
   {
     id: 'assistant',
-    label: 'assistant',
+    label: 'flow',
     icon: '<path d="M12 3.6a8.4 8.4 0 0 0-7.2 12.8L3.6 20.4l4-1.2A8.4 8.4 0 1 0 12 3.6z"/><path d="M9 11h6M9 14h3.5"/>',
     component: Assistant
   },
