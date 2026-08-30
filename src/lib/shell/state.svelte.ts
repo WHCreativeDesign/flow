@@ -17,6 +17,10 @@ class Shell {
   state = $state<ShellState>('idle');
   activeApp = $state<string | null>(null);
   origin = $state<BloomOrigin>({ x: 50, y: 50 });
+  /* Which home page you were on. Held by the shell rather than by Home so it
+     survives both an app opening over it and a drift out to idle: coming back
+     puts you where you left, never on a page you did not choose. */
+  homePage = $state(0);
 
   #idleTimer: ReturnType<typeof setTimeout> | undefined;
 
@@ -57,6 +61,11 @@ class Shell {
         this.activeApp = null;
       }
     }, sec * 1000);
+  }
+
+  setHomePage(page: number) {
+    this.homePage = page;
+    this.#armIdleTimer();
   }
 
   /** any interaction anywhere resets the idle countdown */

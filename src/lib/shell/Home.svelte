@@ -1,54 +1,110 @@
 <script lang="ts">
-  import Orb from '../components/Orb.svelte';
-  import { apps } from '../apps/registry';
-  import { settings } from '../settings.svelte';
+  import Glance from './pages/Glance.svelte';
+  import Field from './pages/Field.svelte';
+  import { pager, type PageDrag, type PageRelease } from '../gestures/pager';
+  import { play } from '../sound/engine';
   import type { BloomOrigin } from './state.svelte';
 
   interface Props {
     onopen: (appId: string, origin: BloomOrigin) => void;
     /** occluded behind an open app: hold still and stop ticking */
     paused?: boolean;
+    page: number;
+    onpage: (page: number) => void;
   }
-  let { onopen, paused = false }: Props = $props();
+  let { onopen, paused = false, page, onpage }: Props = $props();
 
-  let now = $state(new Date());
-  $effect(() => {
-    if (paused) return;
-    const t = setInterval(() => (now = new Date()), 15_000);
-    return () => clearInterval(t);
-  });
+  const PAGES = 2;
 
-  const time = $derived(
-    now
-      .toLocaleTimeString([], settings.current.use24hClock
-        ? { hour: '2-digit', minute: '2-digit', hour12: false }
-        : { hour: 'numeric', minute: '2-digit' })
-      .toLowerCase()
-  );
-  const greeting = $derived.by(() => {
-    const h = now.getHours();
-    if (h < 5) return 'still up';
-    if (h < 12) return 'good morning';
-    if (h < 18) return 'good afternoon';
-    return 'good evening';
-  });
+  let track: HTMLDivElement | undefined = $state();
+  let dragging = $state(false);
+  /* Live position during a drag, mirrored into state only for the dots and
+     parallax — the track transform itself is written straight to the node. */
+  let dragPosition = $state(0);
+  /* While dragging the finger owns the position; otherwise it follows the
+     settled page. Derived rather than assigned in an effect so it reacts to
+     the prop instead of capturing its first value. */
+  const position = $derived(dragging ? dragPosition : page);
+
+  function paint(d: PageDrag) {
+    if (!track) return;
+    track.style.transform = `translate3d(calc(${-page * 100}% + ${d.dx}px), 0, 0)`;
+    dragPosition = d.position;
+  }
+
+  function onstart() {
+    dragging = true;
+    if (track) track.style.transition = 'none';
+  }
+
+  /* Release speed sets the duration, same as the app dismissal: a flick lands
+     quickly, a slow release drifts home. */
+  function release(r: PageRelease) {
+    dragging = false;
+    if (!track) return;
+    const remaining = Math.abs(r.page - position) * (track.clientWidth || window.innerWidth);
+    const ms = Math.min(560, Math.max(220, remaining / Math.max(r.velocity, 0.4)));
+    track.style.transition = `transform ${ms}ms var(--ease-bloom)`;
+    track.style.transform = `translate3d(${-r.page * 100}%, 0, 0)`;
+    dragPosition = r.page;
+    if (r.page !== page) {
+      play('tap');
+      onpage(r.page);
+    }
+  }
+
+  function go(next: number) {
+    if (next === page || next < 0 || next >= PAGES) return;
+    play('tap');
+    onpage(next);
+  }
+
+  function key(e: KeyboardEvent) {
+    if (e.key === 'ArrowRight') go(page + 1);
+    if (e.key === 'ArrowLeft') go(page - 1);
+  }
+
+  // a glance card opens its app, blooming from the card itself
+  function openFrom(appId: string, from: DOMRect) {
+    onopen(appId, {
+      x: ((from.left + from.width / 2) / window.innerWidth) * 100,
+      y: ((from.top + from.height / 2) / window.innerHeight) * 100
+    });
+  }
 </script>
 
-<!-- home: a field of orbs. Not an icon grid — a surface of held apps. -->
-<div class="home" class:paused>
-  <div class="status">
-    <span class="pill">{settings.current.deviceLabel}</span>
-    <span class="pill time">{time}</span>
+<svelte:window onkeydown={key} />
+
+<div
+  class="home"
+  class:paused
+  class:dragging
+  use:pager={{ page, pages: PAGES, bottomReserve: 52, onstart, onmove: paint, onrelease: release }}
+>
+  <div
+    bind:this={track}
+    class="track"
+    style:transform={dragging ? undefined : `translate3d(${-page * 100}%, 0, 0)`}
+    style:transition={dragging ? 'none' : `transform 520ms var(--ease-bloom)`}
+  >
+    <section class="page" aria-hidden={page !== 0}>
+      <Glance paused={paused || page !== 0} away={Math.min(1, Math.abs(position - 0))} onopen={openFrom} />
+    </section>
+    <section class="page" aria-hidden={page !== 1}>
+      <Field {onopen} paused={paused || page !== 1} away={Math.min(1, Math.abs(position - 1))} />
+    </section>
   </div>
 
-  <header class="greet">
-    <div class="mark" aria-hidden="true">flow</div>
-    <div class="hello">{greeting}</div>
-  </header>
-
-  <div class="field">
-    {#each apps as app, i (app.id)}
-      <Orb {app} index={i} {onopen} />
+  <div class="dots" role="tablist" aria-label="home pages">
+    {#each { length: PAGES } as _, i (i)}
+      <button
+        class="dot"
+        class:on={Math.round(position) === i}
+        role="tab"
+        aria-selected={page === i}
+        aria-label={i === 0 ? 'glance' : 'apps'}
+        onclick={() => go(i)}
+      ></button>
     {/each}
   </div>
 </div>
@@ -57,11 +113,9 @@
   .home {
     position: fixed;
     inset: 0;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    padding: max(18px, env(safe-area-inset-top)) 24px max(24px, env(safe-area-inset-bottom));
+    overflow: hidden;
     animation: settle 0.72s var(--ease-rise);
+    touch-action: pan-y;
   }
 
   @keyframes settle {
@@ -74,67 +128,43 @@
     animation-play-state: paused;
   }
 
-  .status {
-    width: 100%;
+  .track {
     display: flex;
-    justify-content: space-between;
-    align-items: center;
-    flex: none;
+    height: 100%;
+    width: 100%;
   }
-  .pill {
-    display: inline-flex;
-    align-items: center;
-    padding: 8px 16px;
-    font-size: 11px;
-    font-weight: 700;
-    letter-spacing: 0.08em;
-    text-transform: lowercase;
-    color: var(--deep);
-    border-radius: 999px;
-    background: var(--glass-bg);
-    border: var(--glass-border);
-    box-shadow: var(--glass-shadow);
-    backdrop-filter: var(--glass-blur);
-    -webkit-backdrop-filter: var(--glass-blur);
+  .home.dragging .track {
+    will-change: transform;
   }
-  .pill.time {
-    font-variant-numeric: tabular-nums;
-    font-size: 12px;
+  .page {
+    flex: 0 0 100%;
+    width: 100%;
+    height: 100%;
   }
 
-  .greet {
-    flex: none;
-    text-align: center;
-    margin: auto 0 0;
-    padding-top: 12px;
-  }
-  .mark {
-    font-family: var(--font-display);
-    font-weight: 600;
-    font-size: 44px;
-    letter-spacing: -0.05em;
-    line-height: 1;
-    background: linear-gradient(168deg, #9adcf7 0%, var(--azure) 42%, var(--royal) 78%, var(--deep) 100%);
-    -webkit-background-clip: text;
-    background-clip: text;
-    color: transparent;
-    filter: drop-shadow(0 1.5px 0 rgba(255, 255, 255, 0.9)) drop-shadow(0 10px 20px rgba(13, 63, 143, 0.22));
-  }
-  .hello {
-    margin-top: 8px;
-    font-size: 13px;
-    font-weight: 500;
-    letter-spacing: 0.05em;
-    color: var(--ink-soft);
-  }
-
-  .field {
-    display: grid;
-    grid-template-columns: repeat(3, minmax(84px, 148px));
-    gap: clamp(20px, 4.5vh, 34px) clamp(18px, 4vw, 30px);
-    width: min(600px, 100%);
+  .dots {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: calc(16px + env(safe-area-inset-bottom));
+    display: flex;
     justify-content: center;
-    margin: auto 0;
-    padding-bottom: 4vh;
+    align-items: center;
+    gap: 7px;
+    z-index: 3;
+  }
+  .dot {
+    width: 6px;
+    height: 6px;
+    padding: 0;
+    border: none;
+    border-radius: 99px;
+    cursor: pointer;
+    background: rgba(13, 63, 143, 0.22);
+    transition: width 0.4s var(--ease-overshoot), background 0.4s ease;
+  }
+  .dot.on {
+    width: 20px;
+    background: rgba(13, 63, 143, 0.5);
   }
 </style>

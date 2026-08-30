@@ -15,12 +15,22 @@ There is no desktop, no windows, no z-index stacking. Any surface running flow i
 | state | behavior |
 |---|---|
 | **idle** | Ambient drift, clock visible. Wakes on any touch or motion. |
-| **home** | A field of orbs — a surface of held apps, not an icon grid. |
+| **home** | Two pages you swipe between: **glance** (clock, notifications, weather, assistant placeholders) and **field** (the orbs). |
 | **app** | Edge to edge, zero chrome. One universal edge-swipe-up returns home. |
 
-Exiting is interactive: drag up from the bottom edge and the app follows your finger, shrinking back toward the orb it came from. Release decides the way a physical object would — by where the gesture is *heading*, not only where it stopped. A fast flick dismisses from an inch up; the same inch dragged slowly settles back. Velocity also sets the duration of the finish.
+Exiting is interactive. On touch the bottom edge is a gesture bar: drag up from it and the app follows your finger, shrinking back toward the orb it came from. Release decides the way a physical object would — by where the gesture is *heading*, not only where it stopped. A fast flick dismisses from an inch up; the same inch dragged slowly settles back. Velocity also sets the duration of the finish. Pointer devices get a **home** key in that same position instead — a drag is a poor gesture with a mouse, so the control changes but its place does not.
 
 The signature gesture is **press → release → bloom**: an orb compresses under the finger (~0.83, fast ease-in), then expands from its exact origin point to fill the screen. Never slide, never cut, never cross-fade.
+
+## The home pages
+
+Home is a horizontal pager. Page one is a glance surface — a lock screen in spirit: the clock owns it, with real notifications read out of instance state (the latest message, the most recent note, capture and library counts) and live weather from the shared forecast source. Page two is the orb field.
+
+The page you were on is held in shell state, so opening an app and coming back — or drifting out to idle and waking — returns you to the page you left, never one you did not choose.
+
+Paging uses the same physics as the app dismissal: the surface tracks your finger with resistance at the ends of the run, and the release is decided by where the gesture is heading, not only where it stopped. Pages carry parallax as they move so the motion reads as depth rather than a flat slide.
+
+**Assistant features are placeholders and are labelled as such in the UI.** The daily summary and the ask field are deliberately inert — a placeholder that looked live would misrepresent what the system does.
 
 ## Apps
 

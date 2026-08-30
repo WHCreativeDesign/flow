@@ -103,15 +103,16 @@
       ondismiss: (r) => settle(r, 'gone'),
       oncancel: (r) => settle(r, 'back')
     }}
-    aria-hidden="true"
   >
-    <span class="grabber"></span>
+    <!-- Touch gets the bar and the drag; pointer devices get a real button in
+         the same place, because a drag is a poor gesture with a mouse. One
+         control, one position, two input models. -->
+    <span class="grabber" aria-hidden="true"></span>
+    <button class="home-key" onclick={onexit} aria-label="go home">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4l8 7h-2.5v8h-11v-8H4l8-7z" /></svg>
+      <span>home</span>
+    </button>
   </div>
-
-  <!-- keyboard/mouse fallback (input priority 2) — gesture stays primary -->
-  <button class="home-fallback" onclick={onexit} aria-label="go home">
-    <svg viewBox="0 0 24 24"><path d="M12 4l8 7h-2.5v8h-11v-8H4l8-7z" /></svg>
-  </button>
 </div>
 
 <style>
@@ -170,7 +171,7 @@
     left: 0;
     right: 0;
     bottom: 0;
-    height: 46px;
+    height: 52px;
     z-index: 10;
     display: flex;
     align-items: flex-end;
@@ -195,47 +196,60 @@
     transform: scaleX(1.12);
   }
 
-  .home-fallback {
-    position: absolute;
-    top: calc(16px + env(safe-area-inset-top));
-    right: 16px;
-    z-index: 10;
-    width: 42px;
-    height: 42px;
-    display: flex;
+  /* Desktop home key — same spot as the gesture bar it replaces. */
+  .home-key {
+    display: none;
     align-items: center;
-    justify-content: center;
+    gap: 8px;
+    padding: 8px 18px;
     cursor: pointer;
+    border-radius: 999px;
+    font-family: var(--font-body);
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
     color: var(--deep);
-    border-radius: 50%;
     background: var(--glass-bg);
-    box-shadow: var(--glass-shadow);
     border: var(--glass-border);
-    backdrop-filter: var(--glass-blur);
-    -webkit-backdrop-filter: var(--glass-blur);
+    box-shadow: var(--glass-shadow);
     opacity: 0;
-    transition: opacity 0.4s ease 0.4s, transform 0.3s var(--ease-overshoot);
+    transition: opacity 0.4s ease 0.4s, transform 0.32s var(--ease-overshoot);
   }
-  .open .home-fallback {
+  .open .home-key {
     opacity: 1;
   }
-  .home-fallback:active {
-    transform: scale(0.9);
+  .home-key:hover {
+    transform: translateY(-2px);
   }
-  .home-fallback svg {
-    width: 18px;
-    height: 18px;
+  .home-key:active {
+    transform: scale(0.94);
+    transition-duration: var(--press-duration);
+    transition-timing-function: var(--ease-press);
+  }
+  .home-key svg {
+    width: 14px;
+    height: 14px;
     stroke: var(--deep);
-    stroke-width: 1.8;
+    stroke-width: 1.9;
     fill: none;
     stroke-linecap: round;
     stroke-linejoin: round;
   }
 
-  /* the home indicator is a touch affordance; pointer devices get the button */
+  /* touch: the bar only, driven entirely by the gesture */
+  @media (pointer: coarse) {
+    .home-key {
+      display: none;
+    }
+  }
+  /* pointer devices: the button instead of the bar */
   @media (pointer: fine) {
     .grabber {
-      opacity: 0.4;
+      display: none;
+    }
+    .home-key {
+      display: inline-flex;
     }
   }
 </style>

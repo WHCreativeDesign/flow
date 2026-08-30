@@ -17,8 +17,7 @@
   align-items: baseline;
   justify-content: space-between;
   gap: 12px;
-  /* right padding keeps clear of the system home button in the corner */
-  padding: 6px 58px 16px 8px;
+  padding: 6px 8px 16px;
   flex: none;
 }
 .fl-app-title {
