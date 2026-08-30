@@ -72,7 +72,17 @@ The assistant is real now. It was a labelled placeholder before, because a
 placeholder that looked live would misrepresent what the system does.
 
 Answers come from **Groq** free tier, falling back to **Gemini 3.6 Flash**
-when Groq fails or is rate-limited. Chat history is per-user and lives in
+when Groq fails or is rate-limited. Each provider holds a pool of **up to five
+keys**, tried in order — one key is one point of failure, and a 429 on one key
+says nothing about the next. A key that returns 401 is disabled on the spot; a
+429 is recorded but never disables, because quota comes back. Keys live in a
+table with RLS on and no policies and no grants, so the browser cannot read a
+single row; the admin panel lists a masked tail and nothing else.
+
+Replies **stream**, token by token, from both providers. Streaming is opt-in
+per request: this function deploys independently of the app, so an older build
+in the wild would call `res.json()` on an event stream — defaulting to JSON
+keeps every deploy backward compatible. Chat history is per-user and lives in
 Supabase, so a conversation started on the phone continues on the wall.
 
 The conversation is laid out the way ChatGPT and Claude lay one out, because

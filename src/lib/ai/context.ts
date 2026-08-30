@@ -146,28 +146,17 @@ export async function buildContext(): Promise<string> {
   return out.join('\n');
 }
 
-/** The most recent photo as a data URL, for questions that are about an image. */
-export async function latestPhoto(): Promise<{ data: string; mime: string } | null> {
+export async function photoBlob(key: string): Promise<Blob | null> {
   try {
-    const keys = (await idb.keys('photos')) as string[];
-    if (!keys.length) return null;
-    const newest = keys.map(String).sort((a, b) => Number(b) - Number(a))[0];
-    const blob = (await idb.get('photos', newest)) as Blob | undefined;
-    if (!blob) return null;
-    return await toDataUrl(blob);
+    return ((await idb.get('photos', key)) as Blob | undefined) ?? null;
   } catch {
     return null;
   }
 }
 
-export async function photoByKey(key: string): Promise<{ data: string; mime: string } | null> {
-  try {
-    const blob = (await idb.get('photos', key)) as Blob | undefined;
-    if (!blob) return null;
-    return await toDataUrl(blob);
-  } catch {
-    return null;
-  }
+/** base64 + mime for a Blob from anywhere — the gallery or a file picker. */
+export async function encodeImage(blob: Blob): Promise<{ data: string; mime: string }> {
+  return toDataUrl(blob);
 }
 
 export async function listPhotoKeys(): Promise<string[]> {

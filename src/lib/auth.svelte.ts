@@ -181,6 +181,54 @@ class Auth {
     await this.refreshUsers();
   }
 
+  /* ---- provider key pool (admin) ---- */
+
+  async adminListKeys() {
+    if (!this.adminToken) return [];
+    const { data, error } = await supabase().rpc('flow_admin_list_keys', {
+      p_admin_token: this.adminToken
+    });
+    if (error) return [];
+    return (data ?? []) as Array<{
+      id: string;
+      provider: string;
+      masked: string;
+      label: string;
+      disabled: boolean;
+      last_error: string | null;
+    }>;
+  }
+
+  async adminAddKey(provider: 'groq' | 'gemini', key: string, label: string) {
+    if (!this.adminToken) throw new Error('locked');
+    const { error } = await supabase().rpc('flow_admin_add_key', {
+      p_admin_token: this.adminToken,
+      p_provider: provider,
+      p_key: key,
+      p_label: label
+    });
+    if (error) throw new Error(error.message);
+  }
+
+  async adminDeleteKey(id: string) {
+    if (!this.adminToken) throw new Error('locked');
+    const { error } = await supabase().rpc('flow_admin_delete_key', {
+      p_admin_token: this.adminToken,
+      p_key_id: id
+    });
+    if (error) throw new Error(error.message);
+  }
+
+  async adminSetKeyEnabled(id: string, enabled: boolean) {
+    if (!this.adminToken) throw new Error('locked');
+    const { error } = await supabase().rpc('flow_admin_set_key_enabled', {
+      p_admin_token: this.adminToken,
+      p_key_id: id,
+      p_enabled: enabled
+    });
+    if (error) throw new Error(error.message);
+  }
+
   async adminDeleteUser(userId: string) {
     if (!this.adminToken) throw new Error('locked');
     const { error } = await supabase().rpc('flow_admin_delete_user', {

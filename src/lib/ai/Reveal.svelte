@@ -2,68 +2,92 @@
   /*
     Word-by-word reveal for an assistant reply.
 
-    The pacing is driven by the text itself rather than by a fixed tick: a
-    word costs a base beat, a comma buys a short rest, and a sentence ending
-    buys a longer one. That is what makes it read as writing rather than as a
-    progress bar — prose has rhythm, and revealing it evenly throws the rhythm
-    away.
+    Two sources feed this. A finished message hands over its whole text at
+    once; a streaming one grows under it as tokens land. Both are the same
+    problem — reveal words at a readable pace, never faster than they exist —
+    so there is one loop, and `text` growing is simply more to reveal.
 
-    Driven by one requestAnimationFrame loop against real elapsed time, not by
-    setInterval: a timer that drifts under load would stutter, and the whole
-    point here is smoothness. Each word fades and rises as it mounts, which is
-    a transform and an opacity — the two things the compositor can do for free.
+    That is why progress lives outside the reactive graph. If the cursor reset
+    every time `text` changed, a streaming reply would restart its animation
+    on every token and never get anywhere.
 
-    Once the whole message is out, the spans are thrown away and the text is
-    rendered as one plain node. A finished message has no reason to stay as
-    hundreds of elements.
+    The pacing is driven by the text itself rather than a fixed tick: a word
+    costs a beat, a comma buys a short rest, a sentence ending a longer one.
+    Prose has rhythm, and revealing it evenly throws the rhythm away. One
+    requestAnimationFrame loop against real elapsed time drives it, because a
+    timer that drifts under load stutters and smoothness is the whole point.
+
+    When the model outruns the reader the loop speeds up rather than falling
+    behind: a long backlog shortens the per-word beat. Waiting on an animation
+    to catch up with text that arrived ten seconds ago is worse than a slightly
+    quicker read.
   */
   interface Props {
     text: string;
-    /** skip the animation entirely — history should not re-type itself */
+    /** history: show it all, do not re-type it */
     instant?: boolean;
+    /** false while tokens are still arriving */
+    complete?: boolean;
     oncomplete?: () => void;
-    /** fires as words land, so the thread can keep itself scrolled */
     onprogress?: () => void;
   }
-  let { text, instant = false, oncomplete, onprogress }: Props = $props();
+  let { text, instant = false, complete = true, oncomplete, onprogress }: Props = $props();
 
   const BASE_MS = 26; // one plain word
   const COMMA_MS = 70; // a breath
   const SENTENCE_MS = 190; // a full stop
 
   /* Split so every token keeps its trailing whitespace: rejoining the shown
-     tokens then reproduces the original text exactly, newlines included. */
+     tokens reproduces the original text exactly, newlines included. */
   const tokens = $derived(text.match(/\S+\s*/g) ?? []);
 
   let shown = $state(0);
-  let done = $state(false);
+  let settled = $state(false);
 
-  function costOf(token: string): number {
+  /* The cursor is deliberately not $state: it must survive `text` growing. */
+  let cursor = 0;
+  let running = false;
+
+  function costOf(token: string, backlog: number): number {
     const t = token.trimEnd();
-    if (/[.!?]["')\]]?$/.test(t)) return BASE_MS + SENTENCE_MS;
-    if (/[,;:]$/.test(t)) return BASE_MS + COMMA_MS;
-    // a paragraph break is a bigger beat than a sentence
-    if (/\n\s*\n/.test(token)) return BASE_MS + SENTENCE_MS * 1.4;
-    return BASE_MS;
+    let ms = BASE_MS;
+    if (/[.!?]["')\]]?$/.test(t)) ms += SENTENCE_MS;
+    else if (/[,;:]$/.test(t)) ms += COMMA_MS;
+    else if (/\n\s*\n/.test(token)) ms += SENTENCE_MS * 1.4;
+
+    // catch up when the model is well ahead, rather than queueing forever
+    if (backlog > 60) return ms * 0.35;
+    if (backlog > 25) return ms * 0.6;
+    return ms;
   }
 
   $effect(() => {
+    // read both so this re-runs when either changes
     const list = tokens;
+    const finished = complete;
+
     if (instant) {
+      cursor = list.length;
       shown = list.length;
-      done = true;
+      settled = true;
       return;
     }
-    if (!list.length) {
-      done = true;
-      oncomplete?.();
+
+    if (cursor >= list.length) {
+      // nothing new to show; if nothing more is coming, we are done
+      if (finished && !settled) {
+        settled = true;
+        oncomplete?.();
+      }
       return;
     }
+
+    if (running) return; // a loop is already draining the queue
+    running = true;
 
     let raf = 0;
     let last = performance.now();
     let budget = 0;
-    let i = 0;
     let cancelled = false;
 
     const step = (now: number) => {
@@ -71,38 +95,46 @@
       budget += now - last;
       last = now;
 
+      const all = tokens;
       let advanced = false;
-      // spend the elapsed time on as many words as it buys
-      while (i < list.length && budget >= costOf(list[i])) {
-        budget -= costOf(list[i]);
-        i += 1;
+      while (cursor < all.length) {
+        const cost = costOf(all[cursor], all.length - cursor);
+        if (budget < cost) break;
+        budget -= cost;
+        cursor += 1;
         advanced = true;
       }
 
       if (advanced) {
-        shown = i;
+        shown = cursor;
         onprogress?.();
       }
 
-      if (i >= list.length) {
-        done = true;
-        oncomplete?.();
+      if (cursor >= all.length && complete) {
+        running = false;
+        if (!settled) {
+          settled = true;
+          oncomplete?.();
+        }
         return;
       }
+      // still streaming, or still words left: keep the loop alive
       raf = requestAnimationFrame(step);
     };
 
     raf = requestAnimationFrame(step);
     return () => {
       cancelled = true;
+      running = false;
       cancelAnimationFrame(raf);
     };
   });
 
   const visible = $derived(tokens.slice(0, shown));
+  const allOut = $derived(settled && shown >= tokens.length);
 </script>
 
-{#if done}
+{#if allOut}
   <!-- finished: one text node, not hundreds of spans -->
   <span class="body">{text}</span>
 {:else}
@@ -130,7 +162,7 @@
       transform: none;
     }
   }
-  /* Someone who has asked for less motion should get the text, not the show. */
+  /* Someone who asked for less motion should get the text, not the show. */
   @media (prefers-reduced-motion: reduce) {
     .w {
       animation: none;
