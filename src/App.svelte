@@ -27,7 +27,12 @@
     <!-- One Home for both states: it stays mounted under an open app so the
          dismissal reveals the field it grew out of, instead of rebuilding the
          whole orb field on every open and every exit. -->
-    <Home onopen={(id, origin) => shell.open(id, origin)} paused={occluded} />
+    <Home
+      onopen={(id, origin) => shell.open(id, origin)}
+      paused={occluded}
+      page={shell.homePage}
+      onpage={(p) => shell.setHomePage(p)}
+    />
   {/if}
 
   {#if shell.state === 'app' && shell.activeApp}
