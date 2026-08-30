@@ -164,18 +164,3 @@ export async function collect(): Promise<Note[]> {
   return out.filter((n) => !cleared.has(n.signature));
 }
 
-/*
-  Assistant suggestions. Placeholders, and labelled as such wherever they are
-  shown — the copy is fixed rather than generated, because nothing is
-  generating anything yet.
-*/
-export interface Suggestion {
-  id: string;
-  text: string;
-}
-
-export const suggestions: Suggestion[] = [
-  { id: 's-day', text: "what's on today?" },
-  { id: 's-notes', text: 'summarise my notes' },
-  { id: 's-weather', text: 'will i need a coat?' }
-];

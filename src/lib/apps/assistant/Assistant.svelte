@@ -1,33 +1,64 @@
 <script lang="ts">
   import { assistant } from '../../ai/assistant.svelte';
+  import Reveal from '../../ai/Reveal.svelte';
+  import Orb from '../../ai/Orb.svelte';
   import { play } from '../../sound/engine';
 
   /*
-    The assistant. Real now — it was a labelled placeholder before, because a
-    placeholder that looked live would misrepresent what the system does.
+    The assistant.
+
+    Laid out the way ChatGPT and Claude lay a conversation out, because that
+    shape has a reason behind it: a reply is a document, not a chat bubble.
+    Bubbles were built for short turns between equals; they cap the line
+    length, centre the eye on the wrong axis, and make three paragraphs of
+    prose look like shouting. So the question sits in a small container on
+    the right and the answer runs full width as plain text on the surface,
+    with one orb marking who is speaking and a measure capped for reading.
 
     History is per-user and lives in Supabase, so the same conversation is
-    there on every terminal that user signs in on, and invisible to everyone
-    else on this one.
+    there on every terminal that user signs in on.
   */
   let draft = $state('');
   let scroller: HTMLDivElement | undefined = $state();
+  let composer: HTMLTextAreaElement | undefined = $state();
+  let showMemories = $state(false);
+  let pinned = true;
 
   $effect(() => {
     void assistant.loadChats();
+    void assistant.loadMemories();
   });
 
-  // follow the conversation as it grows
+  /* Follow the conversation only while the reader is already at the bottom.
+     Yanking someone back down while they are reading earlier text is the
+     single rudest thing a chat view can do. */
+  function atBottom() {
+    if (!scroller) return true;
+    return scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight < 90;
+  }
+  function follow(smooth = true) {
+    if (!pinned || !scroller) return;
+    scroller.scrollTo({ top: scroller.scrollHeight, behavior: smooth ? 'smooth' : 'auto' });
+  }
+
   $effect(() => {
     void assistant.messages.length;
     void assistant.thinking;
-    queueMicrotask(() => scroller?.scrollTo({ top: scroller.scrollHeight, behavior: 'smooth' }));
+    pinned = true;
+    queueMicrotask(() => follow());
   });
+
+  function grow() {
+    if (!composer) return;
+    composer.style.height = 'auto';
+    composer.style.height = `${Math.min(composer.scrollHeight, 168)}px`;
+  }
 
   async function send() {
     const text = draft.trim();
     if (!text || assistant.thinking) return;
     draft = '';
+    queueMicrotask(grow);
     play('send');
     await assistant.ask(text);
   }
@@ -48,20 +79,47 @@
   }
 </script>
 
-<div class="fl-app">
+<div class="fl-app chat">
   {#if assistant.openId === null}
     <!-- history -->
     <div class="fl-app-head">
       <div>
         <h2 class="fl-app-title">assistant</h2>
-        <p class="fl-app-sub">{assistant.chats.length} conversation{assistant.chats.length === 1 ? '' : 's'}</p>
+        <p class="fl-app-sub">
+          {assistant.chats.length} conversation{assistant.chats.length === 1 ? '' : 's'}
+          {#if assistant.memories.length}· {assistant.memories.length} remembered{/if}
+        </p>
       </div>
-      <button class="fl-btn primary" onclick={() => { play('tap'); void assistant.newChat(); }}>
-        new chat
-      </button>
+      <div class="head-actions">
+        {#if assistant.memories.length}
+          <button class="fl-btn quiet" onclick={() => { showMemories = !showMemories; play('tap'); }}>
+            memory
+          </button>
+        {/if}
+        <button class="fl-btn primary" onclick={() => { play('tap'); void assistant.newChat(); }}>
+          new chat
+        </button>
+      </div>
     </div>
 
-    <div class="fl-scroll list" bind:this={scroller}>
+    {#if showMemories}
+      <div class="memories fl-glass">
+        <div class="mem-head">
+          <span>what the assistant remembers about you</span>
+          <button class="fl-btn quiet sm" onclick={() => { play('deny'); void assistant.forgetAll(); }}>
+            forget all
+          </button>
+        </div>
+        {#each assistant.memories as m (m.id)}
+          <div class="mem">
+            <span>{m.content}</span>
+            <button class="x" aria-label="forget this" onclick={() => { play('toggle'); void assistant.forget(m.id); }}>×</button>
+          </div>
+        {/each}
+      </div>
+    {/if}
+
+    <div class="fl-scroll list">
       {#if assistant.chats.length === 0}
         <div class="fl-empty">
           <span class="big">nothing asked yet</span>
@@ -87,52 +145,102 @@
     </div>
   {:else}
     <!-- one conversation -->
-    <div class="fl-app-head">
+    <div class="fl-app-head slim">
       <button class="fl-btn quiet" onclick={() => { play('tap'); assistant.closeChat(); }}>all chats</button>
       <button class="fl-btn quiet" onclick={() => { play('tap'); void assistant.newChat(); }}>new</button>
     </div>
 
-    <div class="fl-scroll thread" bind:this={scroller}>
-      {#each assistant.messages as m (m.id)}
-        <div class="bubble" class:mine={m.role === 'user'}>
-          <span class="text">{m.content}</span>
-          {#if m.model && m.role === 'assistant'}
-            <span class="model">{m.model}</span>
+    <div class="fl-scroll thread" bind:this={scroller} onscroll={() => (pinned = atBottom())}>
+      <div class="measure">
+        {#each assistant.messages as m (m.id)}
+          {#if m.role === 'user'}
+            <div class="turn user">
+              <div class="said">{m.content}</div>
+            </div>
+          {:else}
+            <div class="turn bot">
+              <div class="mark"><Orb size={26} active={false} /></div>
+              <div class="answer">
+                <Reveal
+                  text={m.content}
+                  instant={!m.fresh}
+                  onprogress={() => follow(false)}
+                />
+              </div>
+            </div>
           {/if}
-        </div>
-      {/each}
+        {/each}
 
-      {#if assistant.thinking}
-        <div class="bubble thinking"><span class="dot"></span><span class="dot"></span><span class="dot"></span></div>
-      {/if}
+        {#if assistant.thinking}
+          <div class="turn bot">
+            <div class="mark"><Orb size={26} /></div>
+            <div class="answer waiting">thinking</div>
+          </div>
+        {/if}
 
-      {#if assistant.error}
-        <!-- the real provider error, not a shrug. A generic "unavailable"
-             tells you nothing about which of key, model or quota is wrong. -->
-        <div class="err fl-glass">
-          <strong>the assistant could not answer</strong>
-          <span>{assistant.error}</span>
-        </div>
-      {/if}
+        {#if assistant.justRemembered.length}
+          <!-- being remembered without being told is the part of assistant
+               memory people object to, so it is said out loud -->
+          <div class="turn bot">
+            <div class="mark"></div>
+            <div class="noted">
+              {#each assistant.justRemembered as fact}
+                <span class="fact">remembered · {fact}</span>
+              {/each}
+            </div>
+          </div>
+        {/if}
+
+        {#if assistant.error}
+          <div class="turn bot">
+            <div class="mark"></div>
+            <div class="err">
+              <strong>the assistant could not answer</strong>
+              <span>{assistant.error}</span>
+            </div>
+          </div>
+        {/if}
+      </div>
     </div>
 
-    <div class="composer">
-      <textarea
-        bind:value={draft}
-        onkeydown={key}
-        class="fl-textarea"
-        rows="1"
-        placeholder="ask something"
-        aria-label="message"
-      ></textarea>
-      <button class="fl-round send" onclick={send} disabled={!draft.trim() || assistant.thinking} aria-label="send">
-        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12l16-8-6 8 6 8-16-8z" /></svg>
-      </button>
+    <div class="composer-wrap">
+      <div class="composer measure">
+        <textarea
+          bind:this={composer}
+          bind:value={draft}
+          oninput={grow}
+          onkeydown={key}
+          rows="1"
+          placeholder="ask something"
+          aria-label="message"
+        ></textarea>
+        <button class="send" onclick={send} disabled={!draft.trim() || assistant.thinking} aria-label="send">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 19V5M6 11l6-6 6 6" /></svg>
+        </button>
+      </div>
     </div>
   {/if}
 </div>
 
 <style>
+  .chat {
+    height: 100%;
+  }
+  .fl-app-head.slim {
+    padding-bottom: 6px;
+  }
+  .head-actions {
+    display: flex;
+    gap: 8px;
+  }
+
+  /* one reading measure for the whole conversation, question and answer alike */
+  .measure {
+    width: 100%;
+    max-width: 680px;
+    margin: 0 auto;
+  }
+
   .list {
     display: flex;
     flex-direction: column;
@@ -181,72 +289,125 @@
     stroke-linejoin: round;
   }
 
-  .thread {
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
-    padding-bottom: 8px;
+  .memories {
+    border-radius: 16px;
+    padding: 14px 16px;
+    margin-bottom: 10px;
+    font-family: var(--font-body);
+    color: var(--deep);
   }
-  .bubble {
-    max-width: 82%;
-    align-self: flex-start;
+  .mem-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    opacity: 0.6;
+    margin-bottom: 8px;
+  }
+  .mem {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    padding: 5px 0;
+    font-size: 13px;
+    line-height: 1.4;
+  }
+  .mem span {
+    flex: 1;
+  }
+  .x {
+    background: none;
+    border: none;
+    cursor: pointer;
+    font-size: 17px;
+    line-height: 1;
+    color: var(--deep);
+    opacity: 0.45;
+  }
+  .x:hover {
+    opacity: 1;
+  }
+  .sm {
+    padding: 4px 10px;
+    font-size: 10px;
+  }
+
+  /* ---- the conversation ---- */
+  .thread {
+    flex: 1;
+    padding: 4px 0 10px;
+  }
+  .turn {
+    display: flex;
+    gap: 12px;
+    padding: 12px 2px;
+  }
+  /* the question: small, contained, right — it is an aside, not the document */
+  .turn.user {
+    justify-content: flex-end;
+  }
+  .said {
+    max-width: 78%;
+    padding: 10px 15px;
+    border-radius: 18px 18px 6px 18px;
+    background: linear-gradient(168deg, hsl(205 88% 66%), hsl(212 78% 54%));
+    color: #fff;
+    font-family: var(--font-body);
+    font-size: 14.5px;
+    line-height: 1.5;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    box-shadow: 0 6px 16px hsl(212 70% 45% / 0.22);
+  }
+
+  /* the answer: no container at all. It is the page. */
+  .turn.bot {
+    align-items: flex-start;
+  }
+  .mark {
+    width: 26px;
+    flex: none;
+    padding-top: 1px;
+  }
+  .answer {
+    flex: 1;
+    font-family: var(--font-body);
+    font-size: 15px;
+    line-height: 1.62;
+    color: var(--deep);
+    padding-top: 1px;
+  }
+  .answer.waiting {
+    opacity: 0.5;
+    font-style: italic;
+  }
+
+  .noted {
+    flex: 1;
     display: flex;
     flex-direction: column;
     gap: 4px;
-    padding: 11px 14px;
-    border-radius: 18px 18px 18px 6px;
-    background: var(--glass-bg);
-    border: var(--glass-border);
+  }
+  .fact {
     font-family: var(--font-body);
-    font-size: 14px;
-    line-height: 1.45;
-    color: var(--deep);
-    white-space: pre-wrap;
-    overflow-wrap: anywhere;
-  }
-  .bubble.mine {
-    align-self: flex-end;
-    border-radius: 18px 18px 6px 18px;
-    background: linear-gradient(168deg, hsl(205 88% 66%), hsl(212 78% 54%));
-    border: none;
-    color: #fff;
-  }
-  .model {
-    font-size: 10px;
-    letter-spacing: 0.06em;
-    text-transform: uppercase;
-    opacity: 0.45;
-  }
-
-  .thinking {
-    flex-direction: row;
-    gap: 5px;
-    padding: 14px 16px;
-  }
-  .dot {
-    width: 6px;
-    height: 6px;
-    border-radius: 50%;
-    background: var(--deep);
-    opacity: 0.4;
-    animation: pulse 1.25s ease-in-out infinite;
-  }
-  .dot:nth-child(2) { animation-delay: 0.16s; }
-  .dot:nth-child(3) { animation-delay: 0.32s; }
-  @keyframes pulse {
-    0%, 100% { transform: translateY(0); opacity: 0.32; }
-    45% { transform: translateY(-4px); opacity: 0.75; }
-  }
-  @media (prefers-reduced-motion: reduce) {
-    .dot { animation: none; }
+    font-size: 11.5px;
+    letter-spacing: 0.02em;
+    color: var(--royal, var(--deep));
+    opacity: 0.62;
   }
 
   .err {
+    flex: 1;
     display: flex;
     flex-direction: column;
     gap: 4px;
     padding: 12px 14px;
     border-radius: 14px;
+    background: var(--glass-bg);
+    border: var(--glass-border);
     font-family: var(--font-body);
     font-size: 12px;
     color: #8d1f48;
@@ -256,25 +417,75 @@
     font-size: 13px;
   }
 
+  /* ---- composer ---- */
+  .composer-wrap {
+    padding-top: 8px;
+  }
   .composer {
     display: flex;
     align-items: flex-end;
     gap: 8px;
-    padding-top: 10px;
+    padding: 7px 7px 7px 16px;
+    border-radius: 24px;
+    background: var(--glass-bg);
+    border: var(--glass-border);
+    box-shadow: var(--glass-shadow);
   }
-  .composer .fl-textarea {
+  .composer textarea {
     flex: 1;
-    min-height: 44px;
-    max-height: 140px;
+    min-height: 26px;
+    max-height: 168px;
     resize: none;
+    border: none;
+    background: none;
+    outline: none;
+    padding: 6px 0;
+    font-family: var(--font-body);
+    font-size: 15px;
+    line-height: 1.5;
+    color: var(--deep);
+  }
+  .composer textarea::placeholder {
+    color: var(--deep);
+    opacity: 0.42;
+  }
+  .send {
+    flex: none;
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    border: none;
+    cursor: pointer;
+    display: grid;
+    place-items: center;
+    background: linear-gradient(168deg, hsl(205 88% 66%), hsl(212 78% 54%));
+    transition: transform 0.28s var(--ease-overshoot), opacity 0.2s ease;
+  }
+  .send:disabled {
+    opacity: 0.34;
+    cursor: default;
+  }
+  .send:not(:disabled):hover {
+    transform: translateY(-2px);
+  }
+  .send:not(:disabled):active {
+    transform: scale(0.92);
+    transition-duration: var(--press-duration);
+    transition-timing-function: var(--ease-press);
   }
   .send svg {
     width: 17px;
     height: 17px;
-    stroke: var(--deep);
-    stroke-width: 1.8;
+    stroke: #fff;
+    stroke-width: 2;
     fill: none;
     stroke-linecap: round;
     stroke-linejoin: round;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .send {
+      transition: none;
+    }
   }
 </style>

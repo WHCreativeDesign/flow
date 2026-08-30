@@ -25,6 +25,14 @@ export interface ChatMessage {
   content: string;
   model?: string | null;
   createdAt: string;
+  /** only a reply that just arrived animates; history renders instantly */
+  fresh?: boolean;
+}
+
+export interface Memory {
+  id: string;
+  content: string;
+  createdAt: string;
 }
 
 class Assistant {
@@ -32,9 +40,37 @@ class Assistant {
   openId = $state<string | null>(null);
   messages = $state<ChatMessage[]>([]);
   thinking = $state(false);
+  /** what the assistant just wrote down about you, shown once under the reply */
+  justRemembered = $state<string[]>([]);
+  memories = $state<Memory[]>([]);
   /* Provider failures are shown, not swallowed. A generic "unavailable" tells
      you nothing about whether the key, the model or the quota is the problem. */
   error = $state<string | null>(null);
+
+  async loadMemories() {
+    if (!auth.user) return;
+    const { data, error } = await supabase()
+      .from('memories')
+      .select('id, content, created_at')
+      .order('created_at', { ascending: false });
+    if (error) return;
+    this.memories = (data ?? []).map((m) => ({
+      id: m.id as string,
+      content: m.content as string,
+      createdAt: m.created_at as string
+    }));
+  }
+
+  async forget(id: string) {
+    await supabase().from('memories').delete().eq('id', id);
+    this.memories = this.memories.filter((m) => m.id !== id);
+  }
+
+  async forgetAll() {
+    if (!auth.user) return;
+    await supabase().from('memories').delete().eq('user_id', auth.user.id);
+    this.memories = [];
+  }
 
   async loadChats() {
     if (!auth.user) return;
@@ -64,7 +100,8 @@ class Assistant {
       role: m.role as ChatMessage['role'],
       content: m.content as string,
       model: m.model as string | null,
-      createdAt: m.created_at as string
+      createdAt: m.created_at as string,
+      fresh: false
     }));
   }
 
@@ -111,13 +148,15 @@ class Assistant {
 
     this.error = null;
     this.thinking = true;
+    this.justRemembered = [];
 
     // show the question immediately; the round trip is not instant
     const local: ChatMessage = {
       id: crypto.randomUUID(),
       role: 'user',
       content: body,
-      createdAt: new Date().toISOString()
+      createdAt: new Date().toISOString(),
+      fresh: false
     };
     this.messages = [...this.messages, local];
 
@@ -142,7 +181,7 @@ class Assistant {
           apikey: ANON_KEY,
           'x-flow-token': readToken() ?? ''
         },
-        body: JSON.stringify({ messages: history })
+        body: JSON.stringify({ messages: history, mode: 'chat' })
       });
       const data = await res.json();
 
@@ -156,9 +195,17 @@ class Assistant {
         role: 'assistant',
         content: data.reply,
         model: data.model,
-        createdAt: new Date().toISOString()
+        createdAt: new Date().toISOString(),
+        fresh: true
       };
       this.messages = [...this.messages, reply];
+
+      // surfaced rather than silent: being remembered without being told is
+      // the part of assistant memory people object to
+      if (Array.isArray(data.remembered) && data.remembered.length) {
+        this.justRemembered = data.remembered;
+        void this.loadMemories();
+      }
 
       await supabase().from('chat_messages').insert({
         chat_id: chatId,
@@ -199,6 +246,8 @@ class Assistant {
     this.openId = null;
     this.messages = [];
     this.error = null;
+    this.memories = [];
+    this.justRemembered = [];
   }
 }
 
