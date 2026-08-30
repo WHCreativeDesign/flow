@@ -72,16 +72,38 @@ The assistant is real now. It was a labelled placeholder before, because a
 placeholder that looked live would misrepresent what the system does.
 
 Answers come from **Groq** free tier, falling back to **NVIDIA NIM**, falling
-back to **Gemini 3.6 Flash** — three independent providers, so one running out
-of quota is a fallback, not an outage. NVIDIA speaks the same OpenAI-compatible
+back to **Gemini** — three independent providers, so one running out of quota
+is a fallback, not an outage. NVIDIA speaks the same OpenAI-compatible
 chat-completions shape Groq does, so it reuses that code path rather than
 adding a fourth one; it carries no vision support here, so an attached photo
-skips it and goes straight to Groq or Gemini. Each provider holds a pool of
-**up to five keys**, tried in order — one key is one point of failure, and a
-429 on one key says nothing about the next. A key that returns 401 is disabled
-on the spot; a 429 is recorded but never disables, because quota comes back.
-Keys live in a table with RLS on and no policies and no grants, so the browser
-cannot read a single row; the admin panel lists a masked tail and nothing else.
+skips it and goes straight to Groq or Gemini.
+
+Every default model is deliberately on the **light end** of its provider's
+lineup — Groq's 20B `gpt-oss-20b` rather than a 70B, NVIDIA's 8B Nemotron Nano
+rather than the 49B Super it replaced, Gemini's flash-lite rather than plain
+flash. A free tier's request-and-token ceiling scales with model size, so the
+small model is what keeps three keys from three providers actually usable
+instead of exhausted by the second question — which is the literal problem
+the previous defaults hit: within a day, Groq's model had been deprecated,
+NVIDIA's had hit end-of-life, and Gemini's plain-flash quota was already
+gone. Model IDs are env-overridable (`GROQ_MODEL`, `GROQ_VISION_MODEL`,
+`NVIDIA_MODEL`, `GEMINI_MODEL`) precisely because a provider retiring a model
+is routine, not exceptional, on a free tier.
+
+Two of these three are reasoning-tuned models, and both leak that reasoning
+somewhere if left on defaults. Groq's `gpt-oss` line returns chain-of-thought
+in a separate `reasoning` field — `include_reasoning:false` on the request
+keeps it out, so `content` is reliably the whole answer. NVIDIA's Nemotron
+Nano has no request-level toggle at all: it reads the literal phrase
+"detailed thinking off" out of its own system message and changes behaviour
+on it, so that phrase is appended to the system prompt on every NVIDIA call.
+
+Each provider holds a pool of **up to five keys**, tried in order — one key
+is one point of failure, and a 429 on one key says nothing about the next. A
+key that returns 401 is disabled on the spot; a 429 is recorded but never
+disables, because quota comes back. Keys live in a table with RLS on and no
+policies and no grants, so the browser cannot read a single row; the admin
+panel lists a masked tail and nothing else.
 
 Replies **stream**, token by token, from all three providers. Streaming is
 opt-in per request: this function deploys independently of the app, so an
