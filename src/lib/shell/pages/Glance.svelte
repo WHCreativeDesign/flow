@@ -67,66 +67,73 @@
   everything below is a quiet read of the instance's real state.
 -->
 <div class="glance" style:--away={away}>
-  <div class="clock">
-    <div class="time">{time}</div>
-    <div class="date">{date}</div>
-  </div>
-
-  {#if weather}
-    <button class="wx sheet" onclick={(e) => press(e, 'weather')}>
-      <svg class="wx-icon" viewBox="0 0 24 24" aria-hidden="true">
-        <!-- eslint-disable-next-line svelte/no-at-html-tags — static glyph table -->
-        {@html GLYPHS[weather.glyph ?? 'cloud']}
-      </svg>
-      <span class="wx-text">
-        <span class="wx-title">{weather.title}</span>
-        <span class="wx-body">{weather.body}</span>
-      </span>
-    </button>
-  {/if}
-
-  <!--
-    The assistant is not wired up yet. This is deliberately inert and says so:
-    a placeholder that looked live would be a lie about what the system does.
-  -->
-  <div class="ai sheet" aria-label="ai summary, not connected yet">
-    <div class="ai-head">
-      <span class="ai-dot" aria-hidden="true"></span>
-      <span class="ai-label">daily summary</span>
-      <span class="ai-tag">placeholder</span>
+  <div class="lead">
+    <div class="clock">
+      <div class="time">{time}</div>
+      <div class="date">{date}</div>
     </div>
-    <div class="ai-lines" aria-hidden="true">
-      <span style="width: 92%"></span>
-      <span style="width: 78%"></span>
-      <span style="width: 54%"></span>
-    </div>
-    <p class="ai-note">your assistant will summarise the day here once it is connected.</p>
-  </div>
 
-  <div class="feed">
-    {#if loaded && feed.length === 0}
-      <div class="quiet">nothing waiting on this instance</div>
-    {/if}
-    {#each feed as n, i (n.id)}
-      <button class="note sheet" style:--i={i} onclick={(e) => press(e, n.app)}>
-        <span class="note-icon" aria-hidden="true">
-          <svg viewBox="0 0 24 24">
-            <!-- eslint-disable-next-line svelte/no-at-html-tags — static icon table -->
-            {@html ICONS[n.kind]}
-          </svg>
-        </span>
-        <span class="note-text">
-          <span class="note-title">{n.title}</span>
-          <span class="note-body">{n.body}</span>
+    {#if weather}
+      <button class="wx sheet" onclick={(e) => press(e, 'weather')}>
+        <svg class="wx-icon" viewBox="0 0 24 24" aria-hidden="true">
+          <!-- eslint-disable-next-line svelte/no-at-html-tags — static glyph table -->
+          {@html GLYPHS[weather.glyph ?? 'cloud']}
+        </svg>
+        <span class="wx-text">
+          <span class="wx-title">{weather.title}</span>
+          <span class="wx-body">{weather.body}</span>
         </span>
       </button>
-    {/each}
+    {/if}
   </div>
 
-  <!-- inert: the assistant is not connected -->
-  <div class="ask sheet" aria-hidden="true">
-    <span class="ask-placeholder">ask flow…</span>
-    <span class="ask-send"></span>
+  <div class="side">
+    <!--
+      The assistant is not wired up yet. This is deliberately inert and says so:
+      a placeholder that looked live would be a lie about what the system does.
+    -->
+    <div class="ai sheet" aria-label="ai summary, not connected yet">
+      <div class="ai-head">
+        <span class="ai-dot" aria-hidden="true"></span>
+        <span class="ai-label">daily summary</span>
+        <span class="ai-tag">placeholder</span>
+      </div>
+      <div class="ai-lines" aria-hidden="true">
+        <span style="width: 92%"></span>
+        <span style="width: 78%"></span>
+        <span style="width: 54%"></span>
+      </div>
+      <p class="ai-note">your assistant will summarise the day here once it is connected.</p>
+    </div>
+
+    {#if loaded && feed.length > 0}
+      <div class="feed-label">waiting</div>
+    {/if}
+    <div class="feed">
+      {#if loaded && feed.length === 0}
+        <div class="quiet">nothing waiting on this instance</div>
+      {/if}
+      {#each feed as n, i (n.id)}
+        <button class="note sheet" style:--i={i} onclick={(e) => press(e, n.app)}>
+          <span class="note-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24">
+              <!-- eslint-disable-next-line svelte/no-at-html-tags — static icon table -->
+              {@html ICONS[n.kind]}
+            </svg>
+          </span>
+          <span class="note-text">
+            <span class="note-title">{n.title}</span>
+            <span class="note-body">{n.body}</span>
+          </span>
+        </button>
+      {/each}
+    </div>
+
+    <!-- inert: the assistant is not connected -->
+    <div class="ask sheet" aria-hidden="true">
+      <span class="ask-placeholder">ask flow…</span>
+      <span class="ask-send"></span>
+    </div>
   </div>
 </div>
 
@@ -138,15 +145,26 @@
     gap: 12px;
     /* the page dots live at the bottom of the shell; leave them room */
     padding: max(26px, env(safe-area-inset-top)) 22px 40px;
+    /* phone: one column, so the wrappers are transparent to layout */
+    --lead-align: center;
+    /* never let the stack stretch past a comfortable measure — a tablet-width
+       window would otherwise get the same over-long bars as a desktop did */
+    width: min(560px, 100%);
+    margin: 0 auto;
     /* content trails the page as it leaves, which reads as depth rather than
        a flat slide */
     transform: translate3d(calc(var(--away) * 22px), 0, 0);
     opacity: calc(1 - var(--away) * 0.35);
   }
 
+  .lead,
+  .side {
+    display: contents;
+  }
+
   .clock {
     flex: none;
-    text-align: center;
+    text-align: var(--lead-align);
     padding: 10px 0 6px;
     transform: scale(calc(1 - var(--away) * 0.06));
     transform-origin: 50% 40%;
@@ -294,6 +312,16 @@
     color: var(--ink-faint);
   }
 
+  .feed-label {
+    display: none;
+    font-size: 10.5px;
+    font-weight: 700;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+    padding-left: 4px;
+  }
+
   .feed {
     flex: 1;
     min-height: 0;
@@ -365,5 +393,135 @@
     height: 26px;
     border-radius: 50%;
     background: linear-gradient(168deg, rgba(127, 212, 245, 0.5), rgba(30, 111, 217, 0.4));
+  }
+
+  /*
+    Desktop. The phone stack full-bleed on a wide screen is just long bars and
+    dead space, so the page becomes a composition instead: the clock holds a
+    quiet left column, and everything that is a *list* sits in a narrow right
+    rail at reading width. Cards get denser, not wider.
+  */
+  @media (min-width: 900px) {
+    .glance {
+      --lead-align: left;
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(340px, 400px);
+      grid-template-rows: 1fr;
+      align-content: center;
+      column-gap: clamp(40px, 7vw, 96px);
+      width: min(1180px, 100%);
+      padding: 40px clamp(32px, 5vw, 72px) 56px;
+    }
+
+    .lead {
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      gap: 22px;
+      min-width: 0;
+    }
+    .side {
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      gap: 12px;
+      min-width: 0;
+    }
+
+    .clock {
+      padding: 0;
+    }
+    .time {
+      font-size: clamp(84px, 8.5vw, 132px);
+    }
+    .date {
+      margin-top: 10px;
+      font-size: 15px;
+    }
+
+    /* the weather card carries the left column, so it can be generous */
+    .wx {
+      align-self: flex-start;
+      gap: 18px;
+      padding: 20px 26px;
+      border-radius: 26px;
+      max-width: 420px;
+    }
+    .wx-icon {
+      width: 44px;
+      height: 44px;
+    }
+    .wx-title {
+      font-size: 17px;
+    }
+    .wx-body {
+      font-size: 13px;
+    }
+
+    /* the rail is a list: compact rows, not full-width slabs */
+    .ai {
+      padding: 15px 17px 13px;
+      border-radius: 20px;
+    }
+    .ai-lines {
+      margin: 10px 0 9px;
+    }
+    .ai-lines span {
+      height: 7px;
+    }
+
+    .feed-label {
+      display: block;
+      margin-top: 6px;
+    }
+    .feed {
+      flex: 0 1 auto;
+      gap: 8px;
+    }
+    .note {
+      padding: 11px 14px;
+      border-radius: 18px;
+      gap: 12px;
+    }
+    .note-icon {
+      width: 30px;
+      height: 30px;
+    }
+    .note-icon svg {
+      width: 15px;
+      height: 15px;
+    }
+    .note-title {
+      font-size: 13.5px;
+    }
+    .note-body {
+      font-size: 12px;
+    }
+    /* a pointer can reach these, so let them answer to it */
+    .note:hover,
+    .wx:hover {
+      transform: translateY(-2px);
+    }
+
+    .ask {
+      margin-top: 6px;
+      padding: 12px 15px;
+      border-radius: 18px;
+    }
+  }
+
+  /* short desktop windows: give the rail its own scroll rather than squashing */
+  @media (min-width: 900px) and (max-height: 620px) {
+    .time {
+      font-size: clamp(64px, 6vw, 92px);
+    }
+    .side {
+      justify-content: flex-start;
+      overflow-y: auto;
+      scrollbar-width: none;
+    }
+    .side::-webkit-scrollbar {
+      display: none;
+    }
   }
 </style>
