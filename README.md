@@ -20,6 +20,8 @@ There is no desktop, no windows, no z-index stacking. Any surface running flow i
 
 Exiting is interactive. On touch the bottom edge is a gesture bar: drag up from it and the app follows your finger, shrinking back toward the orb it came from. Release decides the way a physical object would — by where the gesture is *heading*, not only where it stopped. A fast flick dismisses from an inch up; the same inch dragged slowly settles back. Velocity also sets the duration of the finish. Pointer devices get a **home** key in that same position instead — a drag is a poor gesture with a mouse, so the control changes but its place does not.
 
+Every way out collapses. The home key and Escape run the same reverse bloom as the drag — the card shrinks back into the orb it grew from, casting a shadow the whole way down — just on a fixed duration, since a click carries no velocity to read. Nothing in flow cuts.
+
 The signature gesture is **press → release → bloom**: an orb compresses under the finger (~0.83, fast ease-in), then expands from its exact origin point to fill the screen. Never slide, never cut, never cross-fade.
 
 ## The home pages
@@ -49,9 +51,18 @@ All six orbs open working apps. State persists on the instance (localStorage for
 
 ## Sound
 
-All cues are synthesized in `src/lib/sound/engine.ts` — no audio assets. The reference is the Amazon Echo family: pure, warm, high-fidelity earcons rather than anything struck or metallic. Every cue is built from the same layers — a sine **body** with a soft attack, an octave-below **weight** so the tone has a floor, a twelfth-above **presence** so it isn't dull, a **breath** of bandpassed noise under the attack only, and a short damped **room** sent lightly. Pitches sit in a D major pentatonic and cues are phrased as intervals: rising to open, falling to close. Wake, press, bloom, home, tap, toggle, send, shutter, dismiss, and a low two-step refusal. Volume and mute live in settings.
+All cues are synthesized in `src/lib/sound/engine.ts` — no audio assets. The reference is the PS5 system UI: **air first, tone second.** Most of the character lives in a bandpass-filtered noise sweep rather than in pitch, and where a pitch does appear, a cue plays exactly one of them. Never two.
 
-Every node a cue creates is torn down when its voice ends — a cue that leaves nodes on the bus keeps them in the render graph forever, and the graph is processed every quantum.
+That last rule is the whole design. Two notes in sequence read as a *tune*, and a tune on every app launch turns the launch into an announcement. So opening is one gesture — weight, air rising, one tone settling into it — and closing is that same gesture inverted. Not a different melody, the same motion backwards.
+
+The layered voice underneath is unchanged: a sine **body** with a soft attack, an octave-below **weight** so the tone has a floor, a twelfth-above **presence** so it isn't dull, a **breath** of bandpassed noise under the attack only, and a short damped **room** sent lightly. On top of it sit `sweep()`, the noise whoosh that carries the palette, and `sub()`, a slow low swell for weight.
+
+Two cues are exempt and keep their voice exactly, because they are the two the system is recognised by:
+
+- **wake** — the startup sound. This is the thing coming to life, and the palette around it is anonymous on purpose so this one still lands as an arrival.
+- **page** — the glance ↔ field turn.
+
+Every node a cue creates is torn down when its voice ends — a cue that leaves nodes on the bus keeps them in the render graph forever, and the graph is processed every quantum. Volume and mute live in settings.
 
 ## Performance contract
 

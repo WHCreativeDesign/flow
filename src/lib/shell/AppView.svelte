@@ -1,6 +1,7 @@
 <script lang="ts">
   import { appById } from '../apps/registry';
   import { dismissGesture, type DismissRelease, type DragSample } from '../gestures/dismiss';
+  import { play } from '../sound/engine';
   import type { BloomOrigin } from './state.svelte';
 
   interface Props {
@@ -15,6 +16,7 @@
   let el: HTMLDivElement | undefined = $state();
   let open = $state(false);
   let dragging = $state(false);
+  let closing = $state(false);
 
   // The bloom: mount at scale(0.06) anchored to the press point, then expand
   // to fill the screen on the next frame. Grow from the touch — never slide,
@@ -39,6 +41,7 @@
   }
 
   function onstart() {
+    if (closing) return;
     dragging = true;
     if (el) el.style.transition = 'none';
   }
@@ -46,7 +49,7 @@
   /* Release velocity sets the duration: a flick finishes fast, a slow release
      takes its time. Same curve either way — nothing here moves linearly. */
   function settle(r: DismissRelease, to: 'gone' | 'back') {
-    if (!el) return;
+    if (!el || closing) return;
     dragging = false;
     const distance = to === 'gone' ? r.remaining : Math.max(1, r.travel);
     const speed = Math.max(r.velocity, 0.35);
@@ -56,6 +59,8 @@
 
     if (to === 'gone') {
       // collapse back into the orb it grew from
+      closing = true;
+      play('home');
       el.style.transform = 'scale(0.06)';
       el.style.opacity = '0';
       el.style.borderRadius = '50%';
@@ -73,8 +78,34 @@
   let settleTimer: ReturnType<typeof setTimeout> | undefined;
   $effect(() => () => clearTimeout(settleTimer));
 
+  /*
+    The home key and Escape used to call onexit() directly, which unmounted the
+    app on the spot — the two ways out that had no motion at all, against a
+    system whose whole premise is that surfaces grow and shrink rather than
+    cut. This is the drag path's collapse without a gesture to read speed from,
+    so the duration is fixed: the same reverse bloom back into the orb.
+  */
+  const CLOSE_MS = 380;
+
+  function close() {
+    if (closing) return;
+    if (!el) {
+      onexit();
+      return;
+    }
+    closing = true;
+    dragging = false;
+    play('home');
+    el.style.transition = `transform ${CLOSE_MS}ms var(--ease-bloom), opacity ${CLOSE_MS * 0.7}ms ease, border-radius ${CLOSE_MS}ms var(--ease-bloom)`;
+    el.style.transform = 'scale(0.06)';
+    el.style.opacity = '0';
+    el.style.borderRadius = '50%';
+    // unmount a little before the curve lands, so the field is already there
+    settleTimer = setTimeout(onexit, CLOSE_MS - 40);
+  }
+
   function key(e: KeyboardEvent) {
-    if (e.key === 'Escape') onexit();
+    if (e.key === 'Escape') close();
   }
 </script>
 
@@ -85,6 +116,7 @@
   class="bloom"
   class:open
   class:dragging
+  class:closing
   style:transform-origin={`${origin.x}% ${origin.y}%`}
 >
   {#if app}
@@ -108,7 +140,7 @@
          the same place, because a drag is a poor gesture with a mouse. One
          control, one position, two input models. -->
     <span class="grabber" aria-hidden="true"></span>
-    <button class="home-key" onclick={onexit} aria-label="go home">
+    <button class="home-key" onclick={close} aria-label="go home">
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4l8 7h-2.5v8h-11v-8H4l8-7z" /></svg>
       <span>home</span>
     </button>
@@ -135,7 +167,8 @@
   /* Promotion is borrowed GPU memory, not a free speed-up: hold the layer only
      while it is actually moving. */
   .bloom:not(.open),
-  .bloom.dragging {
+  .bloom.dragging,
+  .bloom.closing {
     will-change: transform;
   }
   .bloom.open {
@@ -143,9 +176,15 @@
     transform: scale(1);
     border-radius: 0;
   }
-  /* mid-gesture the app is a held object: it casts a shadow off the surface */
-  .bloom.dragging {
+  /* mid-gesture the app is a held object: it casts a shadow off the surface,
+     and it keeps casting it on the way back down into the orb */
+  .bloom.dragging,
+  .bloom.closing {
     box-shadow: 0 40px 90px rgba(13, 63, 143, 0.32);
+  }
+  /* the gesture bar has nothing left to grab once the collapse starts */
+  .bloom.closing .exit-layer {
+    pointer-events: none;
   }
 
   .surface {
@@ -161,8 +200,10 @@
     opacity: 1;
     transform: none;
   }
-  /* freeze the app's own scrolling and pointer work while it is being dragged */
-  .dragging .surface {
+  /* freeze the app's own scrolling and pointer work while it is being dragged
+     or collapsing */
+  .dragging .surface,
+  .closing .surface {
     pointer-events: none;
   }
 

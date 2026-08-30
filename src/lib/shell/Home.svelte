@@ -48,14 +48,14 @@
     track.style.transform = `translate3d(${-r.page * 100}%, 0, 0)`;
     dragPosition = r.page;
     if (r.page !== page) {
-      play('tap');
+      play('page');
       onpage(r.page);
     }
   }
 
   function go(next: number) {
     if (next === page || next < 0 || next >= PAGES) return;
-    play('tap');
+    play('page');
     onpage(next);
   }
 
