@@ -59,7 +59,7 @@
     if (leaving.has(n.id)) return;
     leaving = new Set(leaving).add(n.id);
     play('dismiss');
-    clearNote(n.signature);
+    void clearNote(n.signature);
     exitTimers.push(
       setTimeout(() => {
         notes = notes.filter((x) => x.id !== n.id);

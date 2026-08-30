@@ -1,8 +1,108 @@
 <script lang="ts">
   import { settings } from '../../settings.svelte';
   import { play } from '../../sound/engine';
+  import { auth } from '../../auth.svelte';
+  import { assistant } from '../../ai/assistant.svelte';
 
   const s = $derived(settings.current);
+
+  /*
+    The admin panel is reached by tapping the "flow" mark at the bottom five
+    times, then entering the admin password. No visible control advertises
+    it — that is the point of a hidden account — and the tap counter resets
+    if you pause, so it is not something you land on by accident.
+  */
+  let taps = $state(0);
+  let tapTimer: ReturnType<typeof setTimeout> | undefined;
+  let askAdmin = $state(false);
+  let adminPass = $state('');
+  let adminError = $state<string | null>(null);
+
+  function secretTap() {
+    clearTimeout(tapTimer);
+    taps += 1;
+    if (taps >= 5) {
+      taps = 0;
+      askAdmin = true;
+      adminError = null;
+      play('toggle');
+      return;
+    }
+    tapTimer = setTimeout(() => (taps = 0), 1200);
+  }
+
+  async function unlock(e: Event) {
+    e.preventDefault();
+    const ok = await auth.unlockAdmin(adminPass);
+    adminPass = '';
+    if (ok) {
+      askAdmin = false;
+      adminError = null;
+      play('open');
+      await loadAdminUsers();
+    } else {
+      adminError = 'wrong password';
+      play('deny');
+    }
+  }
+
+  /* ---- user management (admin only) ---- */
+  interface AdminRow {
+    id: string;
+    display_name: string;
+    username: string;
+    is_admin: boolean;
+    hidden: boolean;
+    avatar_hue: number;
+  }
+  let adminUsers = $state<AdminRow[]>([]);
+  let newName = $state('');
+  let newPass = $state('');
+  let opError = $state<string | null>(null);
+  let pwFor = $state<string | null>(null);
+  let pwValue = $state('');
+
+  async function loadAdminUsers() {
+    adminUsers = (await auth.adminListUsers()) as AdminRow[];
+  }
+
+  async function run(fn: () => Promise<void>) {
+    opError = null;
+    try {
+      await fn();
+      await loadAdminUsers();
+      play('tap');
+    } catch (err) {
+      opError = (err as Error).message;
+      play('deny');
+    }
+  }
+
+  const addUser = () =>
+    run(async () => {
+      if (!newName.trim() || !newPass) throw new Error('name and password are both required');
+      // spread the hues so new users do not all look alike
+      await auth.adminCreateUser(newName.trim(), newPass, (adminUsers.length * 63 + 205) % 360);
+      newName = '';
+      newPass = '';
+    });
+
+  const changePassword = (id: string) =>
+    run(async () => {
+      if (!pwValue) throw new Error('a password is required');
+      await auth.adminSetPassword(id, pwValue);
+      pwFor = null;
+      pwValue = '';
+    });
+
+  /* ---- assistant setup check ---- */
+  let probe = $state<{ groqKey: boolean; geminiKey: boolean; groqModel: string; geminiModel: string } | null>(null);
+  let probed = $state(false);
+  async function checkAi() {
+    probe = await assistant.probe();
+    probed = true;
+    play('tap');
+  }
 
   const idleChoices = [
     { v: 30, label: '30 seconds' },
@@ -144,8 +244,94 @@
       </div>
     </section>
 
+    <section class="fl-glass panel">
+      <h2>signed in</h2>
+      <div class="line">
+        <span class="line-label">{auth.user?.displayName ?? '—'}</span>
+        <button class="fl-btn quiet" onclick={() => { play('home'); void auth.logout(); }}>sign out</button>
+      </div>
+      <p class="fine">your notes, chats, messages and settings follow this account to any terminal.</p>
+    </section>
+
+    <section class="fl-glass panel">
+      <h2>assistant</h2>
+      <div class="line">
+        <span class="line-label">provider keys</span>
+        <button class="fl-btn quiet" onclick={checkAi}>check</button>
+      </div>
+      {#if probed}
+        {#if probe}
+          <p class="fine">
+            groq {probe.groqKey ? `ready · ${probe.groqModel}` : 'no key set'} ·
+            gemini {probe.geminiKey ? `ready · ${probe.geminiModel}` : 'no key set'}
+          </p>
+          {#if !probe.groqKey && !probe.geminiKey}
+            <p class="fine warn">
+              add GROQ_API_KEY (and optionally GEMINI_API_KEY) to the `ai` edge function's secrets
+              in Supabase. Keys never live in this app — it is a public build.
+            </p>
+          {/if}
+        {:else}
+          <p class="fine warn">could not reach the assistant function</p>
+        {/if}
+      {/if}
+    </section>
+
+    {#if auth.adminToken}
+      <section class="fl-glass panel">
+        <h2>users · admin</h2>
+
+        {#each adminUsers as u (u.id)}
+          <div class="line user-row">
+            <span class="dot" style:--hue={u.avatar_hue}></span>
+            <span class="line-label grow">
+              {u.display_name}{#if u.is_admin}<em> · admin</em>{/if}
+            </span>
+            <button class="fl-btn quiet sm" onclick={() => { pwFor = pwFor === u.id ? null : u.id; pwValue = ''; play('tap'); }}>
+              password
+            </button>
+            {#if !u.is_admin}
+              <button class="fl-btn quiet sm" onclick={() => run(() => auth.adminDeleteUser(u.id))}>remove</button>
+            {/if}
+          </div>
+          {#if pwFor === u.id}
+            <div class="line sub">
+              <input class="fl-input" type="password" bind:value={pwValue} placeholder="new password" />
+              <button class="fl-btn primary sm" onclick={() => changePassword(u.id)}>set</button>
+            </div>
+          {/if}
+        {/each}
+
+        <div class="line sub">
+          <input class="fl-input" bind:value={newName} placeholder="new user name" />
+          <input class="fl-input" type="password" bind:value={newPass} placeholder="password" />
+          <button class="fl-btn primary sm" onclick={addUser}>add</button>
+        </div>
+
+        {#if opError}<p class="fine warn">{opError}</p>{/if}
+
+        <div class="line">
+          <span class="fine">removing a user deletes everything of theirs.</span>
+          <button class="fl-btn quiet sm" onclick={() => { auth.lockAdmin(); play('home'); }}>lock</button>
+        </div>
+      </section>
+    {/if}
+
+    {#if askAdmin}
+      <section class="fl-glass panel">
+        <h2>admin</h2>
+        <form class="line sub" onsubmit={unlock}>
+          <input class="fl-input" type="password" bind:value={adminPass} placeholder="admin password" />
+          <button class="fl-btn primary sm" type="submit">unlock</button>
+          <button class="fl-btn quiet sm" type="button" onclick={() => { askAdmin = false; adminPass = ''; }}>cancel</button>
+        </form>
+        {#if adminError}<p class="fine warn">{adminError}</p>{/if}
+      </section>
+    {/if}
+
     <section class="fl-glass panel about">
-      <div class="about-mark">flow</div>
+      <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
+      <div class="about-mark" onclick={secretTap}>flow</div>
       <p>a personal environment · by cloak</p>
       <p class="fine">one instance, every screen a terminal into it. everything here lives on your instance — nothing leaves it.</p>
     </section>
@@ -153,6 +339,24 @@
 </div>
 
 <style>
+  .grow { flex: 1; }
+  .sm { padding: 5px 12px; font-size: 10px; }
+  .user-row { gap: 8px; }
+  .line.sub {
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+  .line.sub .fl-input { flex: 1; min-width: 120px; }
+  .dot {
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    flex: none;
+    background: linear-gradient(168deg, hsl(var(--hue) 88% 70%), hsl(var(--hue) 75% 50%));
+  }
+  .fine.warn { color: #8d1f48; }
+  .about-mark { cursor: default; user-select: none; }
+
   .panels {
     flex: 1;
     display: flex;

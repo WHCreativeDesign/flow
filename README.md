@@ -36,18 +36,65 @@ Paging uses the same physics as the app dismissal: the surface tracks your finge
 
 Notifications can be cleared: **swipe a card away on touch, or use the clear target that appears on hover with a pointer.** A cleared card records what it was *about*, so it stays gone until the underlying thing actually changes — a newer message or another capture brings it back, re-reading the same state does not.
 
-**Assistant features are placeholders and are labelled as such in the UI.** The daily summary, the suggestion chips, and the ask field are deliberately inert — a placeholder that looked live would misrepresent what the system does. Settings can switch the whole assistant surface off.
+The glance's daily summary, suggestion chips, and ask field are still placeholders and labelled as such — a placeholder that looked live would misrepresent what the system does. Settings can switch that surface off. The **assistant app** is live and Groq-backed; see below.
+
+## Users
+
+flow is one instance per household, not per person. The terminal opens on a
+picker — **User 1**, **User 2**, whoever else exists — and nothing behind it
+belongs to anyone until someone signs in.
+
+Users are deliberately **not** Supabase Auth. These are people sharing a screen
+in a kitchen, identified by a short password, not by email and a confirmation
+link. So flow keeps its own `app_users` table: passwords are bcrypt hashes made
+by `pgcrypto` inside Postgres and never leave it, the browser only ever holds an
+opaque session token, and both credential tables have RLS on with **no policies
+at all** — the publishable key cannot read a single row of either. Every
+credential path goes through a `SECURITY DEFINER` function instead.
+
+Everything a person owns follows them to any terminal they sign in on: notes,
+message threads, assistant chat history, the camera gallery index, the music
+playlist, weather places, cleared glance cards, and their settings. One policy
+shape does the work — `user_id = current_user_id()`, where `current_user_id()`
+resolves the `x-flow-token` header against live sessions. A terminal with no
+session sees nothing.
+
+The **admin** is a hidden account that never appears on the picker. It is
+reached by tapping the `flow` mark at the bottom of settings five times and
+entering its password; unlocking it does not change who is signed in — you stay
+yourself and additionally hold an admin token, held in memory only, that dies
+with the tab. From there: add users, rename them, change passwords, remove them.
+Removing a user deletes everything of theirs, by cascade.
+
+## The assistant
+
+The assistant is real now. It was a labelled placeholder before, because a
+placeholder that looked live would misrepresent what the system does.
+
+Answers come from **Groq** free tier, falling back to **Gemini** when Groq
+fails or is rate-limited. Chat history is per-user and lives in Supabase, so a
+conversation started on the phone continues on the wall.
+
+Neither provider key is in this repository or in the built bundle, and neither
+can be: flow is a static build on GitHub Pages, so anything it ships is
+readable by anyone who opens it. The keys live as secrets on the `ai` Edge
+Function, which authenticates the caller's flow session token before it will
+talk to a provider. Model ids are read from env with defaults, so a retired
+model is a secret change rather than a redeploy — and when every provider
+fails, the function returns *what* failed rather than collapsing it into one
+opaque "unavailable".
 
 ## Apps
 
-All six orbs open working apps. State persists on the instance (localStorage for structured state, IndexedDB for blobs) through the `InstanceClient` boundary:
+All seven orbs open working apps. State persists per-user in Supabase through the `InstanceClient` boundary — the swap that boundary was written for. Photo and audio blobs stay in IndexedDB on the device:
 
 - **camera** — live viewfinder (`getUserMedia`), capture with flash, front/back flip, a persistent gallery with save/delete.
 - **notes** — create, edit, autosave, delete; titles derived from the first line.
 - **messages** — named threads with a composer and timestamped bubbles; honest about scope (streams live on this instance until multi-device sync lands).
 - **weather** — live Open-Meteo data: current conditions, 24-hour strip, 7-day range bars; geolocation or place search; °C/°F.
 - **music** — a local library (files persist in IndexedDB), playlist, seek, skip, and a live frequency visualizer.
-- **settings** — system sounds and volume, idle timeout, 12/24-hour clock, terminal name; applied instantly and persisted.
+- **assistant** — Groq-backed chat with Gemini fallback; per-user history that follows you between terminals.
+- **settings** — system sounds and volume, idle timeout, 12/24-hour clock, terminal name; applied instantly and persisted. Also sign-out, an assistant key check, and the hidden admin panel.
 
 ## Sound
 
