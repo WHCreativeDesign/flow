@@ -1,6 +1,7 @@
 import { instance } from './sync';
 import { idb } from './storage/idb';
 import { codeOf, type Forecast, type Place } from './data/weather';
+import { supabase } from './sync/supabase';
 
 /*
   Glance notifications.
@@ -11,7 +12,7 @@ import { codeOf, type Forecast, type Place } from './data/weather';
 */
 export interface Note {
   id: string;
-  kind: 'weather' | 'notes' | 'messages' | 'camera' | 'music';
+  kind: 'weather' | 'notes' | 'messages' | 'camera' | 'music' | 'reminder';
   title: string;
   body: string;
   /** the app an orb press should open */
@@ -82,14 +83,44 @@ export async function clearNote(signature: string) {
   await instance.setAppState('notifications', { cleared: next });
 }
 
+async function dueReminders(): Promise<Array<{ id: string; text: string; due_at: string }>> {
+  try {
+    const { data } = await supabase()
+      .from('reminders')
+      .select('id, text, due_at')
+      .lte('due_at', new Date().toISOString())
+      .order('due_at', { ascending: false });
+    return data ?? [];
+  } catch {
+    return [];
+  }
+}
+
 export async function collect(): Promise<Note[]> {
   const out: Note[] = [];
 
-  const [notesState, msgState, weatherState] = await Promise.all([
+  const [notesState, msgState, weatherState, reminders] = await Promise.all([
     instance.getAppState('notes'),
     instance.getAppState('messages'),
-    instance.getAppState('weather')
+    instance.getAppState('weather'),
+    dueReminders()
   ]);
+
+  // one card per due reminder, oldest as well as newest — a reminder does not
+  // get quieter for having waited, unlike the "latest message" card below
+  for (const r of reminders) {
+    out.push({
+      id: `reminder-${r.id}`,
+      kind: 'reminder',
+      title: r.text,
+      body: `reminder · ${new Date(r.due_at).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}`,
+      app: 'assistant',
+      at: new Date(r.due_at).getTime(),
+      // the reminder's own id, not the due timestamp: once dismissed it
+      // must never resurface, and a fired reminder never changes
+      signature: `reminder:${r.id}`
+    });
+  }
 
   const place = weatherState?.place as Place | undefined;
   if (place) {

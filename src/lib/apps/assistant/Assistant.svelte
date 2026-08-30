@@ -235,6 +235,19 @@
           </div>
         {/if}
 
+        {#if assistant.justDid.length}
+          <!-- same reasoning as memory: a setting changed or a note deleted
+               without being told is worse than the extra line -->
+          <div class="turn bot">
+            <div class="mark"></div>
+            <div class="noted">
+              {#each assistant.justDid as did}
+                <span class="fact">done · {did}</span>
+              {/each}
+            </div>
+          </div>
+        {/if}
+
         {#if assistant.error}
           <div class="turn bot">
             <div class="mark"></div>
