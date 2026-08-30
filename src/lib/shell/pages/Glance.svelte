@@ -1,8 +1,9 @@
 <script lang="ts">
   import { settings } from '../../settings.svelte';
-  import { collect, type Note } from '../../notifications.svelte';
+  import { collect, clearNote, suggestions, type Note } from '../../notifications.svelte';
   import { GLYPHS } from '../../data/weather';
   import { play } from '../../sound/engine';
+  import { swipeAway } from '../../gestures/swipeAway';
 
   interface Props {
     paused?: boolean;
@@ -45,8 +46,31 @@
     now.toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric' }).toLowerCase()
   );
 
+  const ai = $derived(settings.current.aiEnabled);
   const weather = $derived(notes.find((n) => n.kind === 'weather') ?? null);
   const feed = $derived(notes.filter((n) => n.kind !== 'weather'));
+
+  /* A cleared card animates out on its own before it leaves the list, so the
+     list closes up behind it instead of snapping shut underneath it. */
+  let leaving = $state<Set<string>>(new Set());
+  let exitTimers: ReturnType<typeof setTimeout>[] = [];
+
+  function dismiss(n: Note) {
+    if (leaving.has(n.id)) return;
+    leaving = new Set(leaving).add(n.id);
+    play('dismiss');
+    clearNote(n.signature);
+    exitTimers.push(
+      setTimeout(() => {
+        notes = notes.filter((x) => x.id !== n.id);
+        const next = new Set(leaving);
+        next.delete(n.id);
+        leaving = next;
+      }, 300)
+    );
+  }
+
+  $effect(() => () => exitTimers.forEach(clearTimeout));
 
   const ICONS: Record<Note['kind'], string> = {
     weather: '',
@@ -92,6 +116,7 @@
       The assistant is not wired up yet. This is deliberately inert and says so:
       a placeholder that looked live would be a lie about what the system does.
     -->
+    {#if ai}
     <div class="ai sheet" aria-label="ai summary, not connected yet">
       <div class="ai-head">
         <span class="ai-dot" aria-hidden="true"></span>
@@ -106,6 +131,13 @@
       <p class="ai-note">your assistant will summarise the day here once it is connected.</p>
     </div>
 
+    <div class="suggests" aria-label="suggestions, not connected yet">
+      {#each suggestions as sg, i (sg.id)}
+        <span class="chip" style:--i={i}>{sg.text}</span>
+      {/each}
+    </div>
+    {/if}
+
     {#if loaded && feed.length > 0}
       <div class="feed-label">waiting</div>
     {/if}
@@ -114,26 +146,39 @@
         <div class="quiet">nothing waiting on this instance</div>
       {/if}
       {#each feed as n, i (n.id)}
-        <button class="note sheet" style:--i={i} onclick={(e) => press(e, n.app)}>
-          <span class="note-icon" aria-hidden="true">
-            <svg viewBox="0 0 24 24">
-              <!-- eslint-disable-next-line svelte/no-at-html-tags — static icon table -->
-              {@html ICONS[n.kind]}
-            </svg>
-          </span>
-          <span class="note-text">
-            <span class="note-title">{n.title}</span>
-            <span class="note-body">{n.body}</span>
-          </span>
-        </button>
+        <div
+          class="note-row"
+          class:leaving={leaving.has(n.id)}
+          style:--i={i}
+          use:swipeAway={{ onaway: () => dismiss(n) }}
+        >
+          <button class="note sheet" onclick={(e) => press(e, n.app)}>
+            <span class="note-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24">
+                <!-- eslint-disable-next-line svelte/no-at-html-tags — static icon table -->
+                {@html ICONS[n.kind]}
+              </svg>
+            </span>
+            <span class="note-text">
+              <span class="note-title">{n.title}</span>
+              <span class="note-body">{n.body}</span>
+            </span>
+          </button>
+          <!-- pointer devices get a target; touch throws the card instead -->
+          <button class="note-x" onclick={() => dismiss(n)} aria-label={`clear ${n.title}`}>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" /></svg>
+          </button>
+        </div>
       {/each}
     </div>
 
-    <!-- inert: the assistant is not connected -->
-    <div class="ask sheet" aria-hidden="true">
-      <span class="ask-placeholder">ask flow…</span>
-      <span class="ask-send"></span>
-    </div>
+    {#if ai}
+      <!-- inert: the assistant is not connected -->
+      <div class="ask sheet" aria-hidden="true">
+        <span class="ask-placeholder">ask flow…</span>
+        <span class="ask-send"></span>
+      </div>
+    {/if}
   </div>
 </div>
 
@@ -332,17 +377,82 @@
     overscroll-behavior: contain;
     touch-action: pan-y;
     scrollbar-width: none;
+    /*
+      `overflow-y: auto` clips the other axis too, which was cutting each
+      card's soft shadow off square at the container's edge — a hard-edged box
+      around a rounded card, worst on hover when the card lifts into it. The
+      padding gives the shadow room to fall; the negative margin puts the
+      layout back where it was.
+    */
+    padding: 12px 16px;
+    margin: -12px -16px;
   }
   .feed::-webkit-scrollbar {
     display: none;
   }
-  .note {
-    animation: note-in 0.6s var(--ease-rise) backwards;
+
+  .note-row {
+    position: relative;
+    flex: none;
+    display: flex;
+    align-items: center;
+    overflow: visible;
+    touch-action: pan-y;
+    animation: note-in 0.62s var(--ease-rise) backwards;
     animation-delay: calc(var(--i) * 70ms + 120ms);
   }
+  /* the row collapses after the card has been thrown, so the list closes up */
+  .note-row.leaving {
+    animation: note-out 0.3s var(--ease-bloom) forwards;
+    pointer-events: none;
+  }
   @keyframes note-in {
-    from { opacity: 0; transform: translateY(14px) scale(0.97); }
+    from { opacity: 0; transform: translateY(16px) scale(0.96); }
     to { opacity: 1; transform: none; }
+  }
+  @keyframes note-out {
+    from { opacity: 1; max-height: 96px; margin-bottom: 0; }
+    to { opacity: 0; max-height: 0; margin-bottom: -10px; }
+  }
+
+  .note {
+    flex: 1;
+    min-width: 0;
+  }
+
+  /* clear target — pointer devices only; touch throws the card instead */
+  .note-x {
+    display: none;
+    position: absolute;
+    right: 9px;
+    width: 24px;
+    height: 24px;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    border: none;
+    border-radius: 50%;
+    cursor: pointer;
+    color: var(--ink-faint);
+    background: rgba(255, 255, 255, 0.9);
+    box-shadow: 0 2px 6px rgba(13, 63, 143, 0.16);
+    opacity: 0;
+    transform: scale(0.82);
+    transition: opacity 0.22s ease, transform 0.3s var(--ease-overshoot), color 0.2s ease;
+  }
+  .note-x svg {
+    width: 11px;
+    height: 11px;
+    stroke: currentColor;
+    stroke-width: 2.2;
+    fill: none;
+    stroke-linecap: round;
+  }
+  .note-x:hover {
+    color: var(--royal);
+  }
+  .note-x:active {
+    transform: scale(0.88);
   }
   .note-icon {
     width: 34px;
@@ -366,6 +476,27 @@
     fill: none;
     stroke-linecap: round;
     stroke-linejoin: round;
+  }
+
+  .suggests {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 7px;
+    padding: 0 2px;
+  }
+  .chip {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--ink-soft);
+    padding: 7px 13px;
+    border-radius: 999px;
+    border: 1px solid rgba(255, 255, 255, 0.8);
+    background: linear-gradient(168deg, rgba(255, 255, 255, 0.66), rgba(226, 245, 253, 0.45));
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.9);
+    /* inert, like everything else the assistant owns until it is connected */
+    opacity: 0.72;
+    animation: note-in 0.55s var(--ease-rise) backwards;
+    animation-delay: calc(var(--i) * 60ms + 200ms);
   }
 
   .quiet {
@@ -501,6 +632,18 @@
     .note:hover,
     .wx:hover {
       transform: translateY(-2px);
+    }
+    .note-x {
+      display: flex;
+    }
+    .note-row:hover .note-x,
+    .note-x:focus-visible {
+      opacity: 1;
+      transform: scale(1);
+    }
+    /* keep the text clear of the button while it is showing */
+    .note-row:hover .note-text {
+      padding-right: 20px;
     }
 
     .ask {

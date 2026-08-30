@@ -32,7 +32,9 @@ The page you were on is held in shell state, so opening an app and coming back �
 
 Paging uses the same physics as the app dismissal: the surface tracks your finger with resistance at the ends of the run, and the release is decided by where the gesture is heading, not only where it stopped. Pages carry parallax as they move so the motion reads as depth rather than a flat slide.
 
-**Assistant features are placeholders and are labelled as such in the UI.** The daily summary and the ask field are deliberately inert — a placeholder that looked live would misrepresent what the system does.
+Notifications can be cleared: **swipe a card away on touch, or use the clear target that appears on hover with a pointer.** A cleared card records what it was *about*, so it stays gone until the underlying thing actually changes — a newer message or another capture brings it back, re-reading the same state does not.
+
+**Assistant features are placeholders and are labelled as such in the UI.** The daily summary, the suggestion chips, and the ask field are deliberately inert — a placeholder that looked live would misrepresent what the system does. Settings can switch the whole assistant surface off.
 
 ## Apps
 
@@ -47,7 +49,9 @@ All six orbs open working apps. State persists on the instance (localStorage for
 
 ## Sound
 
-All cues are synthesized in `src/lib/sound/engine.ts` — no audio assets. The palette is Windows-7-Aero-inspired struck glass: two-partial bar voices (fundamental + 2.76× inharmonic partial) through a lowpass and a small generated hall, phrased in open fifths in A. Wake, press, bloom, home, send, shutter, toggle, and a gentle two-note refusal. Volume and mute live in settings.
+All cues are synthesized in `src/lib/sound/engine.ts` — no audio assets. The reference is the Amazon Echo family: pure, warm, high-fidelity earcons rather than anything struck or metallic. Every cue is built from the same layers — a sine **body** with a soft attack, an octave-below **weight** so the tone has a floor, a twelfth-above **presence** so it isn't dull, a **breath** of bandpassed noise under the attack only, and a short damped **room** sent lightly. Pitches sit in a D major pentatonic and cues are phrased as intervals: rising to open, falling to close. Wake, press, bloom, home, tap, toggle, send, shutter, dismiss, and a low two-step refusal. Volume and mute live in settings.
+
+Every node a cue creates is torn down when its voice ends — a cue that leaves nodes on the bus keeps them in the render graph forever, and the graph is processed every quantum.
 
 ## Performance contract
 
