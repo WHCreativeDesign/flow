@@ -9,6 +9,7 @@
   import { auth } from './lib/auth.svelte';
   import { clearInstanceCache } from './lib/sync';
   import { assistant } from './lib/ai/assistant.svelte';
+  import { glanceAI } from './lib/ai/glance.svelte';
 
   // While an app is open it covers the screen: home and the atmosphere below
   // it are occluded, so they hold their pixels and stop animating. Nothing a
@@ -41,6 +42,7 @@
     lastUser = id;
     clearInstanceCache();
     assistant.reset();
+    glanceAI.reset();
     shell.reset();
     if (id) void settings.pull();
   });

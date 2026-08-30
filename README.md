@@ -36,7 +36,7 @@ Paging uses the same physics as the app dismissal: the surface tracks your finge
 
 Notifications can be cleared: **swipe a card away on touch, or use the clear target that appears on hover with a pointer.** A cleared card records what it was *about*, so it stays gone until the underlying thing actually changes — a newer message or another capture brings it back, re-reading the same state does not.
 
-The glance's daily summary, suggestion chips, and ask field are still placeholders and labelled as such — a placeholder that looked live would misrepresent what the system does. Settings can switch that surface off. The **assistant app** is live and Groq-backed; see below.
+The glance's daily summary, suggestion chips and ask field are live. The summary is generated once a day per user from what is actually on the glance — the weather, what is waiting, the time — and cached on the instance, because the glance re-renders on every clock tick and asking a model each time would burn a free tier before lunch. Chips fill the ask field; asking hands the question to the assistant app, since a lock screen is the wrong place to read three paragraphs. Settings can switch the whole surface off.
 
 ## Users
 
@@ -71,9 +71,47 @@ Removing a user deletes everything of theirs, by cascade.
 The assistant is real now. It was a labelled placeholder before, because a
 placeholder that looked live would misrepresent what the system does.
 
-Answers come from **Groq** free tier, falling back to **Gemini** when Groq
-fails or is rate-limited. Chat history is per-user and lives in Supabase, so a
-conversation started on the phone continues on the wall.
+Answers come from **Groq** free tier, falling back to **Gemini 3.6 Flash**
+when Groq fails or is rate-limited. Chat history is per-user and lives in
+Supabase, so a conversation started on the phone continues on the wall.
+
+The conversation is laid out the way ChatGPT and Claude lay one out, because
+that shape has a reason behind it: a reply is a document, not a chat bubble.
+Bubbles were built for short turns between equals — they cap the line length,
+centre the eye on the wrong axis, and make three paragraphs look like shouting.
+So the question sits in a small container on the right and the answer runs full
+width as plain text, one orb marking who is speaking, measure capped for
+reading.
+
+Replies arrive **word by word, paced by the text itself**: a word costs a beat,
+a comma buys a short rest, a full stop a longer one, a paragraph break longer
+still. That is what makes it read as writing rather than as a progress bar —
+prose has rhythm, and revealing it evenly throws the rhythm away. One
+`requestAnimationFrame` loop against real elapsed time drives it, and once a
+message is fully out its per-word spans are thrown away for a single text node.
+History never re-types itself.
+
+The waiting state is a **pulsing orb**, not three dots: three layers that are
+rasterised once and thereafter only transformed, so it can sit on screen
+indefinitely without costing a frame budget. It is the same mark that labels
+the finished reply, so waiting and answered are visibly the same voice.
+
+## Memory
+
+The assistant can write things down about you between conversations. When you
+state a durable fact — a name, a preference, a routine — it emits a
+`<remember>` tag, which the Edge Function strips out of what you see and writes
+to a per-user `memories` table; later conversations get those facts in their
+system prompt. A tag contract rather than native tool-calling, because that
+works identically on Groq and Gemini and would not break the moment the
+fallback fires.
+
+Memory is **shown, not silent**. A reply that stored something says so
+underneath, and the assistant app lists everything it knows about you with a
+delete on each line and a *forget all*. Being remembered without being told is
+the part of assistant memory people object to. Facts are stored one per row
+rather than as a rolling summary precisely so they can be listed and removed
+one at a time.
 
 Neither provider key is in this repository or in the built bundle, and neither
 can be: flow is a static build on GitHub Pages, so anything it ships is

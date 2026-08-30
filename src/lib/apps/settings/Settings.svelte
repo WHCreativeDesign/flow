@@ -219,7 +219,7 @@
       <div class="line">
         <span class="line-col">
           <span class="line-label">assistant on the glance</span>
-          <span class="line-hint">summary, suggestions and the ask field. not connected yet — these are placeholders.</span>
+          <span class="line-hint">the daily summary, suggestion chips and ask field on the glance.</span>
         </span>
         <button
           class="switch"

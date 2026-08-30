@@ -1,6 +1,9 @@
 <script lang="ts">
   import { settings } from '../../settings.svelte';
-  import { collect, clearNote, suggestions, type Note } from '../../notifications.svelte';
+  import { collect, clearNote, type Note } from '../../notifications.svelte';
+  import { glanceAI } from '../../ai/glance.svelte';
+  import { assistant } from '../../ai/assistant.svelte';
+  import Orb from '../../ai/Orb.svelte';
   import { GLYPHS } from '../../data/weather';
   import { play } from '../../sound/engine';
   import { swipeAway } from '../../gestures/swipeAway';
@@ -47,6 +50,45 @@
   );
 
   const ai = $derived(settings.current.aiEnabled);
+
+  /* The summary is generated from what is actually on the glance, so it waits
+     for the notes rather than racing them. Cached per day inside glanceAI —
+     this effect fires on every wake and every return from an app. */
+  $effect(() => {
+    if (!ai || !loaded) return;
+    void glanceAI.load(notes);
+  });
+
+  /* The ask field hands the question to the assistant app rather than
+     answering inline: a lock screen is the wrong place to read three
+     paragraphs, and the answer belongs in the history with everything else. */
+  let asking = $state('');
+  let askField: HTMLInputElement | undefined = $state();
+
+  async function ask(e: Event) {
+    e.preventDefault();
+    const text = asking.trim();
+    if (!text) return;
+    asking = '';
+    play('send');
+    const id = await assistant.newChat();
+    if (!id) return;
+    openAssistant();
+    void assistant.ask(text);
+  }
+
+  function useSuggestion(text: string) {
+    asking = text;
+    askField?.focus();
+    play('tap');
+  }
+
+  function openAssistant() {
+    const rect = askField?.getBoundingClientRect() ?? new DOMRect(
+      window.innerWidth / 2, window.innerHeight / 2, 1, 1
+    );
+    onopen('assistant', rect);
+  }
   const weather = $derived(notes.find((n) => n.kind === 'weather') ?? null);
   const feed = $derived(notes.filter((n) => n.kind !== 'weather'));
 
@@ -112,30 +154,31 @@
   </div>
 
   <div class="side">
-    <!--
-      The assistant is not wired up yet. This is deliberately inert and says so:
-      a placeholder that looked live would be a lie about what the system does.
-    -->
     {#if ai}
-    <div class="ai sheet" aria-label="ai summary, not connected yet">
+    <div class="ai sheet" aria-label="daily summary">
       <div class="ai-head">
-        <span class="ai-dot" aria-hidden="true"></span>
+        <Orb size={16} active={glanceAI.loading} />
         <span class="ai-label">daily summary</span>
-        <span class="ai-tag">placeholder</span>
       </div>
-      <div class="ai-lines" aria-hidden="true">
-        <span style="width: 92%"></span>
-        <span style="width: 78%"></span>
-        <span style="width: 54%"></span>
-      </div>
-      <p class="ai-note">your assistant will summarise the day here once it is connected.</p>
+      {#if glanceAI.summary}
+        <p class="ai-text">{glanceAI.summary}</p>
+      {:else if glanceAI.loading}
+        <div class="ai-lines" aria-hidden="true">
+          <span style="width: 92%"></span>
+          <span style="width: 64%"></span>
+        </div>
+      {:else}
+        <p class="ai-note">no summary yet — the assistant needs a provider key.</p>
+      {/if}
     </div>
 
-    <div class="suggests" aria-label="suggestions, not connected yet">
-      {#each suggestions as sg, i (sg.id)}
-        <span class="chip" style:--i={i}>{sg.text}</span>
-      {/each}
-    </div>
+    {#if glanceAI.suggestions.length}
+      <div class="suggests" aria-label="suggestions">
+        {#each glanceAI.suggestions as sg, i (sg)}
+          <button class="chip" style:--i={i} onclick={() => useSuggestion(sg)}>{sg}</button>
+        {/each}
+      </div>
+    {/if}
     {/if}
 
     {#if loaded && feed.length > 0}
@@ -173,11 +216,18 @@
     </div>
 
     {#if ai}
-      <!-- inert: the assistant is not connected -->
-      <div class="ask sheet" aria-hidden="true">
-        <span class="ask-placeholder">ask flow…</span>
-        <span class="ask-send"></span>
-      </div>
+      <form class="ask sheet" onsubmit={ask}>
+        <input
+          bind:this={askField}
+          bind:value={asking}
+          class="ask-field"
+          placeholder="ask flow…"
+          aria-label="ask the assistant"
+        />
+        <button class="ask-send" type="submit" disabled={!asking.trim()} aria-label="ask">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 19V5M6 11l6-6 6 6" /></svg>
+        </button>
+      </form>
     {/if}
   </div>
 </div>
@@ -307,13 +357,6 @@
     align-items: center;
     gap: 8px;
   }
-  .ai-dot {
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
-    background: radial-gradient(circle at 30% 28%, #fff, var(--aqua) 45%, var(--azure) 100%);
-    opacity: 0.5;
-  }
   .ai-label {
     font-size: 11px;
     font-weight: 700;
@@ -321,16 +364,11 @@
     text-transform: uppercase;
     color: var(--royal);
   }
-  .ai-tag {
-    margin-left: auto;
-    font-size: 9.5px;
-    font-weight: 700;
-    letter-spacing: 0.1em;
-    text-transform: uppercase;
-    color: var(--ink-faint);
-    border: 1px solid rgba(138, 163, 194, 0.4);
-    border-radius: 999px;
-    padding: 3px 8px;
+  .ai-text {
+    margin: 8px 0 0;
+    font-size: 13.5px;
+    line-height: 1.5;
+    color: var(--ink-soft);
   }
   .ai-lines {
     display: flex;
@@ -485,6 +523,7 @@
     padding: 0 2px;
   }
   .chip {
+    font-family: var(--font-body);
     font-size: 12px;
     font-weight: 600;
     color: var(--ink-soft);
@@ -493,10 +532,18 @@
     border: 1px solid rgba(255, 255, 255, 0.8);
     background: linear-gradient(168deg, rgba(255, 255, 255, 0.66), rgba(226, 245, 253, 0.45));
     box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.9);
-    /* inert, like everything else the assistant owns until it is connected */
-    opacity: 0.72;
+    cursor: pointer;
     animation: note-in 0.55s var(--ease-rise) backwards;
     animation-delay: calc(var(--i) * 60ms + 200ms);
+    transition: transform 0.28s var(--ease-overshoot);
+  }
+  .chip:hover {
+    transform: translateY(-2px);
+  }
+  .chip:active {
+    transform: scale(0.95);
+    transition-duration: var(--press-duration);
+    transition-timing-function: var(--ease-press);
   }
 
   .quiet {
@@ -511,19 +558,55 @@
     display: flex;
     align-items: center;
     gap: 10px;
-    padding: 13px 16px;
-    opacity: 0.55;
+    padding: 9px 10px 9px 16px;
   }
-  .ask-placeholder {
+  .ask-field {
     flex: 1;
+    border: none;
+    background: none;
+    outline: none;
+    font-family: var(--font-body);
     font-size: 14px;
+    color: var(--deep);
+  }
+  .ask-field::placeholder {
     color: var(--ink-faint);
   }
   .ask-send {
-    width: 26px;
-    height: 26px;
+    flex: none;
+    width: 30px;
+    height: 30px;
+    border: none;
     border-radius: 50%;
-    background: linear-gradient(168deg, rgba(127, 212, 245, 0.5), rgba(30, 111, 217, 0.4));
+    cursor: pointer;
+    display: grid;
+    place-items: center;
+    background: linear-gradient(168deg, hsl(196 92% 70%), hsl(212 80% 55%));
+    transition: transform 0.28s var(--ease-overshoot), opacity 0.2s ease;
+  }
+  .ask-send:disabled {
+    opacity: 0.36;
+    cursor: default;
+  }
+  .ask-send:not(:disabled):active {
+    transform: scale(0.9);
+    transition-duration: var(--press-duration);
+    transition-timing-function: var(--ease-press);
+  }
+  .ask-send svg {
+    width: 15px;
+    height: 15px;
+    stroke: #fff;
+    stroke-width: 2.1;
+    fill: none;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .chip,
+    .ask-send {
+      transition: none;
+    }
   }
 
   /*
