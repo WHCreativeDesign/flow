@@ -26,6 +26,10 @@
     settings.update({ richEffects: on });
     play('toggle');
   }
+  function setAi(on: boolean) {
+    settings.update({ aiEnabled: on });
+    play('toggle');
+  }
   function setClock(use24: boolean) {
     settings.update({ use24hClock: use24 });
     play('toggle');
@@ -106,6 +110,24 @@
           aria-checked={s.use24hClock}
           aria-label="24-hour clock"
           onclick={() => setClock(!s.use24hClock)}
+        ><i></i></button>
+      </div>
+    </section>
+
+    <section class="fl-glass panel">
+      <h2>assistant</h2>
+      <div class="line">
+        <span class="line-col">
+          <span class="line-label">assistant on the glance</span>
+          <span class="line-hint">summary, suggestions and the ask field. not connected yet — these are placeholders.</span>
+        </span>
+        <button
+          class="switch"
+          class:on={s.aiEnabled}
+          role="switch"
+          aria-checked={s.aiEnabled}
+          aria-label="assistant on the glance"
+          onclick={() => setAi(!s.aiEnabled)}
         ><i></i></button>
       </div>
     </section>

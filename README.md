@@ -34,7 +34,9 @@ The page you were on is held in shell state, so opening an app and coming back �
 
 Paging uses the same physics as the app dismissal: the surface tracks your finger with resistance at the ends of the run, and the release is decided by where the gesture is heading, not only where it stopped. Pages carry parallax as they move so the motion reads as depth rather than a flat slide.
 
-**Assistant features are placeholders and are labelled as such in the UI.** The daily summary and the ask field are deliberately inert — a placeholder that looked live would misrepresent what the system does.
+Notifications can be cleared: **swipe a card away on touch, or use the clear target that appears on hover with a pointer.** A cleared card records what it was *about*, so it stays gone until the underlying thing actually changes — a newer message or another capture brings it back, re-reading the same state does not.
+
+**Assistant features are placeholders and are labelled as such in the UI.** The daily summary, the suggestion chips, and the ask field are deliberately inert — a placeholder that looked live would misrepresent what the system does. Settings can switch the whole assistant surface off.
 
 ## Apps
 
@@ -49,16 +51,18 @@ All six orbs open working apps. State persists on the instance (localStorage for
 
 ## Sound
 
-All cues are synthesized in `src/lib/sound/engine.ts` — no audio assets. The palette takes the PS5 system UI as its reference: **air first, tone second.** Cues are bandpass-filtered noise sweeps with a low sine swell under them, and where a pitch appears it is a single clean harmonic voice. Never two.
+All cues are synthesized in `src/lib/sound/engine.ts` — no audio assets. The reference is the PS5 system UI: **air first, tone second.** Most of the character lives in a bandpass-filtered noise sweep rather than in pitch, and where a pitch does appear, a cue plays exactly one of them. Never two.
 
-That last rule is the whole design. A two-note cue reads as a jingle, and a jingle turns every app launch into an announcement — so opening is one gesture of air rising with one tone settling into it, and closing is that same gesture inverted. Not a different tune, the same motion backwards.
+That last rule is the whole design. Two notes in sequence read as a *tune*, and a tune on every app launch turns the launch into an announcement. So opening is one gesture — weight, air rising, one tone settling into it — and closing is that same gesture inverted. Not a different melody, the same motion backwards.
 
-Two cues are deliberately exempt and keep the older struck-glass voice — two-partial bar tones (fundamental + the 2.76× inharmonic partial of a struck bar) in A major:
+The layered voice underneath is unchanged: a sine **body** with a soft attack, an octave-below **weight** so the tone has a floor, a twelfth-above **presence** so it isn't dull, a **breath** of bandpassed noise under the attack only, and a short damped **room** sent lightly. On top of it sit `sweep()`, the noise whoosh that carries the palette, and `sub()`, a slow low swell for weight.
 
-- **wake** — the startup sound. This is the system coming to life, and the palette around it is anonymous on purpose so this one still lands.
+Two cues are exempt and keep their voice exactly, because they are the two the system is recognised by:
+
+- **wake** — the startup sound. This is the thing coming to life, and the palette around it is anonymous on purpose so this one still lands as an arrival.
 - **page** — the glance ↔ field turn.
 
-Those two run through a 1.4s hall; everything else sits in a 0.5s room, close and dry. Volume and mute live in settings.
+Every node a cue creates is torn down when its voice ends — a cue that leaves nodes on the bus keeps them in the render graph forever, and the graph is processed every quantum. Volume and mute live in settings.
 
 ## Performance contract
 
