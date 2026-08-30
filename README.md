@@ -159,9 +159,54 @@ model is a secret change rather than a redeploy — and when every provider
 fails, the function returns *what* failed rather than collapsing it into one
 opaque "unavailable".
 
+## Actions
+
+The assistant can act on your own data, not just describe it: change a
+setting, write or delete a note, set the saved weather place, send a message
+into one of your threads, set or clear a reminder. It emits a small closed
+vocabulary of tags to do it — `<setting key="soundVolume" value="0.3"/>`,
+`<note-create>...</note-create>`, and so on — the same convention `<remember>`
+already used for memory, extended rather than replaced. That choice over real
+provider tool-calling is deliberate: a fixed vocabulary behaves identically
+across Groq, NVIDIA and Gemini and survives the fallback chain exactly like
+`<remember>` does, where three different `tools`/`tool_calls` implementations
+would not.
+
+The Edge Function's only job with an action tag is to recognise it, strip it
+from what you see, and hand it to the client as structured data. Every action
+actually **executes in the browser**, through the exact same
+`settings.update()` / `instance.setAppState()` / `supabase()` calls the real
+UI already uses — nothing here has more reach than a person tapping a switch
+already has, because it *is* that same call. Actions auto-execute and report
+what happened afterward, the same trust model memory uses: settings and notes
+are trivially reversible, so asking first would slow down the common case for
+a cost that isn't there.
+
+The vocabulary is closed, and that closedness is the actual boundary, not
+this code's care: there is no admin action, no other-user action, nothing
+resembling one. A request for one has nothing to bind to, on either side —
+the Edge Function never taught the model a tag for it, and the client's own
+executor ignores any tag name it doesn't recognise even if one somehow
+arrived. Every self-closing and block tag pattern, the streaming hold-back
+that keeps raw markup off the screen mid-reply, and the whitespace left
+behind when two tags sit on one line are covered by a standalone test file
+run before each deploy — this is exactly the kind of regex surface a
+plausible-looking fix can quietly break.
+
+**Reminders** are the one genuinely new capability — nothing before this
+could do it. A `reminder-create` tag needs an absolute ISO-8601 timestamp,
+computed by the model itself from the "Now" line already in its context,
+because there is no other way to ground "in 20 minutes" in a stateless
+request. A due reminder surfaces on the glance exactly like any other
+notification card, through the same `collect()`/`clearNote()` mechanism notes
+and messages already use — no separate "fired" flag, because a reminder's own
+id as its signature already means a dismissed one never comes back.
+
 ## What the assistant can see
 
-The assistant reads the whole of the signed-in person's instance on every question: notes, message threads, the music library, the saved weather place, settings, the terminal name, and how many photos exist and when they were taken. Not a cached digest — assembled fresh, because the point is that it knows what is true now.
+The assistant reads the whole of the signed-in person's instance on every question: notes, message threads, the music library, the saved weather place, settings, reminders, the terminal name, and how many photos exist and when they were taken. Not a cached digest — assembled fresh, because the point is that it knows what is true now. Notes and message threads carry their real id in the listing, which is what lets an action reference an existing one exactly rather than needing to invent one.
+
+(This is also where a stale note-shape assumption from before this file ever read `Notes.svelte` got fixed: a note is `{id, text, updated}`, not `{id, title, body}` — every note had been reaching the assistant as "untitled" with no body at all until this pass.)
 
 It cannot reach anyone else's. Not because the code is careful but because the layer underneath it cannot return another user's rows: everything goes through the same RLS-scoped `instance` the UI uses, and photo blobs come from this device's own IndexedDB.
 

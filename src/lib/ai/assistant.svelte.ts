@@ -1,6 +1,7 @@
 import { supabase, FUNCTIONS_URL, ANON_KEY, readToken } from '../sync/supabase';
 import { auth } from '../auth.svelte';
 import { buildContext } from './context';
+import { applyActions, type RawAction } from './actions';
 import { play } from '../sound/engine';
 
 /*
@@ -56,6 +57,8 @@ class Assistant {
   thinking = $state(false);
   /** what the assistant just wrote down about you, shown once under the reply */
   justRemembered = $state<string[]>([]);
+  /** what the assistant just did — settings/notes/weather/messages/reminders */
+  justDid = $state<string[]>([]);
   memories = $state<Memory[]>([]);
   /* Provider failures are shown, not swallowed. A generic "unavailable" tells
      you nothing about whether the key, the model or the quota is the problem. */
@@ -195,6 +198,7 @@ class Assistant {
     this.error = null;
     this.thinking = true;
     this.justRemembered = [];
+    this.justDid = [];
     play('thinking');
 
     // show the question immediately; the round trip is not instant
@@ -264,7 +268,7 @@ class Assistant {
       let started = false;
       let text = '';
       let model: string | null = null;
-      let data: { reply?: string; remembered?: string[] } = {};
+      let data: { reply?: string; remembered?: string[]; actions?: RawAction[] } = {};
 
       const append = (delta: string) => {
         text += delta;
@@ -367,6 +371,22 @@ class Assistant {
         void this.loadMemories();
       }
 
+      /*
+        Actions execute here, client-side, against the exact same stores the
+        real UI writes to — never in the edge function, which only ever
+        recognised and structured the tag. Auto-executed and reported after
+        the fact, the same trust model memory already uses: a person can
+        always undo a setting or delete a note, so asking first would slow
+        down the common case for a cost that isn't there.
+      */
+      if (Array.isArray(data.actions) && data.actions.length) {
+        const results = await applyActions(data.actions);
+        if (results.length) {
+          this.justDid = results;
+          setTimeout(() => play('toggle'), 260);
+        }
+      }
+
       await supabase().from('chat_messages').insert({
         chat_id: chatId,
         user_id: auth.user.id,
@@ -409,6 +429,7 @@ class Assistant {
     this.error = null;
     this.memories = [];
     this.justRemembered = [];
+    this.justDid = [];
     this.clearAttached();
   }
 }
