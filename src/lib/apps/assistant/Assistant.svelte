@@ -5,8 +5,6 @@
   import { play } from '../../sound/engine';
   import Pane from '../../components/Pane.svelte';
   import { listPhotoKeys, photoBlob, encodeImage } from '../../ai/context';
-  import SendMorph from '../../ai/SendMorph.svelte';
-  import { tick } from 'svelte';
 
   /*
     The assistant.
@@ -30,11 +28,6 @@
   let photoKeys = $state<string[]>([]);
   let picking = $state(false);
   let fileInput: HTMLInputElement | undefined = $state();
-  let composerBox: HTMLDivElement | undefined = $state();
-  /* while set, the real bubble is held invisible and the flown clone stands
-     in for it — two copies of the same message on screen would read as a
-     duplicate rather than as one object moving */
-  let morph = $state<{ from: DOMRect; to: DOMRect; text: string } | null>(null);
 
   $effect(() => {
     void listPhotoKeys().then((k) => (photoKeys = k));
@@ -105,29 +98,11 @@
   async function send() {
     const text = draft.trim();
     if (!text || assistant.thinking) return;
-
-    // measured before the field empties, while the composer is still its
-    // sent-message size
-    const fromRect = composerBox?.getBoundingClientRect() ?? null;
-
     draft = '';
     queueMicrotask(grow);
     // no cue here: ask() plays 'thinking' as the request leaves, and two cues
     // on one action reads as a stutter
-    const pending = assistant.ask(text);
-
-    if (fromRect) {
-      // the destination only exists once the bubble has been laid out, so the
-      // flight is measured from the real thing rather than an estimate
-      await tick();
-      requestAnimationFrame(() => {
-        const nodes = scroller?.querySelectorAll('.turn.user .said');
-        const last = nodes?.[nodes.length - 1] as HTMLElement | undefined;
-        if (last) morph = { from: fromRect, to: last.getBoundingClientRect(), text };
-      });
-    }
-
-    await pending;
+    await assistant.ask(text);
   }
 
   function key(e: KeyboardEvent) {
@@ -136,13 +111,6 @@
       void send();
     }
   }
-
-  const lastUserIndex = $derived.by(() => {
-    for (let i = assistant.messages.length - 1; i >= 0; i--) {
-      if (assistant.messages[i].role === 'user') return i;
-    }
-    return -1;
-  });
 
   function when(iso: string) {
     const d = new Date(iso);
@@ -227,10 +195,10 @@
 
     <div class="fl-scroll thread" bind:this={scroller} onscroll={() => (pinned = atBottom())}>
       <div class="measure">
-        {#each assistant.messages as m, i (m.id)}
+        {#each assistant.messages as m (m.id)}
           {#if m.role === 'user'}
             <div class="turn user">
-              <div class="said" class:flying={morph && i === lastUserIndex}>{m.content}</div>
+              <div class="said">{m.content}</div>
             </div>
           {:else}
             <div class="turn bot">
@@ -319,7 +287,7 @@
         </div>
       {/if}
 
-      <div class="composer measure" bind:this={composerBox}>
+      <div class="composer measure">
         {#if photoKeys.length}
           <button
             class="clip"
@@ -346,10 +314,6 @@
     </div>
   {/if}
 </Pane>
-
-{#if morph}
-  <SendMorph from={morph.from} to={morph.to} text={morph.text} ondone={() => (morph = null)} />
-{/if}
 </div>
 
 <style>
@@ -487,13 +451,13 @@
     display: flex;
     gap: 12px;
     padding: 12px 2px;
-    /* each turn arrives rather than appearing; the question and the answer
-       use the same curve as everything else the shell moves */
+    /* a plain blur fade-in rather than a directional slide: the message
+       just resolves into focus where it already sits, no travel implied */
     animation: turn-in 0.42s var(--ease-rise) both;
   }
   @keyframes turn-in {
-    from { opacity: 0; transform: translate3d(0, 10px, 0); }
-    to { opacity: 1; transform: none; }
+    from { opacity: 0; filter: blur(6px); }
+    to { opacity: 1; filter: blur(0); }
   }
   @media (prefers-reduced-motion: reduce) {
     .turn { animation: none; }
@@ -501,11 +465,6 @@
   /* the question: small, contained, right — it is an aside, not the document */
   .turn.user {
     justify-content: flex-end;
-  }
-  /* held invisible, not unmounted: the layout must stay exactly as measured
-     or the clone lands on a target that has since moved */
-  .said.flying {
-    visibility: hidden;
   }
   .said {
     max-width: 78%;
