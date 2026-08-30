@@ -384,7 +384,7 @@ class Assistant {
   }
 
   /** Setup check for settings: which provider keys the function actually has. */
-  async probe(): Promise<{ groqKey: boolean; geminiKey: boolean; groqModel: string; geminiModel: string } | null> {
+  async probe(): Promise<{ groqKey: boolean; nvidiaKey: boolean; geminiKey: boolean; groqKeys?: number; nvidiaKeys?: number; geminiKeys?: number; groqModel: string; nvidiaModel: string; geminiModel: string } | null> {
     try {
       const res = await fetch(`${FUNCTIONS_URL}/ai`, {
         method: 'POST',

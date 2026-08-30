@@ -107,7 +107,7 @@
     last_error: string | null;
   }
   let keys = $state<KeyRow[]>([]);
-  let newProvider = $state<'groq' | 'gemini'>('groq');
+  let newProvider = $state<'groq' | 'nvidia' | 'gemini'>('groq');
   let newKey = $state('');
   let newKeyLabel = $state('');
 
@@ -127,10 +127,13 @@
   /* ---- assistant setup check ---- */
   let probe = $state<{
     groqKey: boolean;
+    nvidiaKey: boolean;
     geminiKey: boolean;
     groqKeys?: number;
+    nvidiaKeys?: number;
     geminiKeys?: number;
     groqModel: string;
+    nvidiaModel: string;
     geminiModel: string;
   } | null>(null);
   let probed = $state(false);
@@ -321,9 +324,10 @@
         {#if probe}
           <p class="fine">
             groq {probe.groqKey ? `${probe.groqKeys ?? 1} key${(probe.groqKeys ?? 1) === 1 ? '' : 's'} · ${probe.groqModel}` : 'no key set'} ·
+            nvidia {probe.nvidiaKey ? `${probe.nvidiaKeys ?? 1} key${(probe.nvidiaKeys ?? 1) === 1 ? '' : 's'} · ${probe.nvidiaModel}` : 'no key set'} ·
             gemini {probe.geminiKey ? `${probe.geminiKeys ?? 1} key${(probe.geminiKeys ?? 1) === 1 ? '' : 's'} · ${probe.geminiModel}` : 'no key set'}
           </p>
-          {#if !probe.groqKey && !probe.geminiKey}
+          {#if !probe.groqKey && !probe.nvidiaKey && !probe.geminiKey}
             <p class="fine warn">
                 add a key below in the admin panel, or set GROQ_API_KEY on the `ai` edge
               function. Keys never live in this app — it is a public build.
@@ -392,6 +396,7 @@
         <div class="line sub">
           <select class="fl-input" bind:value={newProvider} aria-label="provider">
             <option value="groq">groq</option>
+            <option value="nvidia">nvidia</option>
             <option value="gemini">gemini</option>
           </select>
           <input class="fl-input" bind:value={newKeyLabel} placeholder="label (optional)" />
