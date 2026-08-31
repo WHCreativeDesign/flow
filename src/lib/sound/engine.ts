@@ -435,11 +435,13 @@ export function play(name: CueName) {
 /*
   Ambient home-screen music, in the style of the Wii U menu: soft, spacious,
   never insistent. This is an original generative bed, not a transcription of
-  any actual soundtrack — a slow detuned drone under a lowpass whose cutoff
-  breathes on its own LFO, with sparse plucked chimes dropped over it at
-  randomized intervals from the same D pentatonic every other cue in this file
-  uses. Nothing here is a fixed melody that could be recognised as someone
-  else's; it is closer to wind chimes over a held chord than a tune.
+  any actual soundtrack — three detuned triangles under a lowpass whose
+  cutoff breathes on its own LFO, moving through a slow I–V–vi–IV chord
+  progression (a common, unownable harmonic skeleton — not anyone's melody),
+  with sparse plucked chimes dropped over it at randomized intervals from the
+  same D pentatonic every other cue in this file uses. Nothing here is a
+  fixed melody that could be recognised as someone else's; it is closer to
+  wind chimes drifting over a slowly changing chord than a tune.
 
   On its own gain bus straight to the destination, not through `master`: a
   person turning UI sound off is muting button taps and confirmations, not
@@ -450,13 +452,35 @@ export function play(name: CueName) {
 */
 const MENU_CHIME_NOTES = [D4, E4, Fs4, A4, D5, Fs5, A5, D6];
 
+// I–V–vi–IV in D, voiced in the D3 octave — D major, A major, B minor,
+// G major — the same skeleton behind more pop songs than anyone could name,
+// which is exactly why it belongs to no one.
+const A2 = 110.0;
+const B2 = 123.47;
+const Cs3 = 138.59;
+const D3 = 146.83; // = D4 / 2
+const E3 = 164.81;
+const Fs3 = 184.99; // = Fs4 / 2
+const G2 = 98.0;
+const A3 = 220.0; // = A4 / 2
+const DRONE_CHORDS: Array<[number, number, number]> = [
+  [D3, Fs3, A3], // D major
+  [A2, Cs3, E3], // A major
+  [B2, D3, Fs3], // B minor
+  [G2, B2, D3] // G major
+];
+const CHORD_HOLD_MS = 17000;
+const CHORD_GLIDE_S = 5;
+
 let musicGain: GainNode | null = null;
 let musicOn = false;
 let musicTimer: ReturnType<typeof setTimeout> | undefined;
+let musicChordTimer: ReturnType<typeof setTimeout> | undefined;
 let musicVoices: Array<{ stop: () => void }> = [];
 
-/* The held drone: three detuned triangles an octave-plus down, under a
-   lowpass whose corner drifts slowly so the chord never sits static. */
+/* The held drone: three detuned triangles, under a lowpass whose corner
+   drifts slowly so the texture never sits static, gliding between chords in
+   the progression above rather than holding one triad forever. */
 function menuDrone(ac: AudioContext, bus: GainNode): { stop: () => void } {
   const filt = ac.createBiquadFilter();
   filt.type = 'lowpass';
@@ -471,21 +495,33 @@ function menuDrone(ac: AudioContext, bus: GainNode): { stop: () => void } {
   lfo.connect(lfoGain).connect(filt.frequency);
   lfo.start();
 
-  const oscs: OscillatorNode[] = [];
-  for (const base of [D4, A4, Fs4]) {
+  const oscs: OscillatorNode[] = DRONE_CHORDS[0].map((freq) => {
     const osc = ac.createOscillator();
     osc.type = 'triangle';
-    osc.frequency.value = base / 2;
+    osc.frequency.value = freq;
     osc.detune.value = (Math.random() * 2 - 1) * 6;
     const g = ac.createGain();
     g.gain.value = 0.045;
     osc.connect(g).connect(filt);
     osc.start();
-    oscs.push(osc);
-  }
+    return osc;
+  });
+
+  let chordIdx = 0;
+  let playing = true;
+  const nextChord = () => {
+    if (!playing) return;
+    chordIdx = (chordIdx + 1) % DRONE_CHORDS.length;
+    const chord = DRONE_CHORDS[chordIdx];
+    oscs.forEach((osc, i) => osc.frequency.exponentialRampToValueAtTime(chord[i], ac.currentTime + CHORD_GLIDE_S));
+    musicChordTimer = setTimeout(nextChord, CHORD_HOLD_MS);
+  };
+  musicChordTimer = setTimeout(nextChord, CHORD_HOLD_MS);
 
   return {
     stop() {
+      playing = false;
+      clearTimeout(musicChordTimer);
       lfo.stop();
       for (const o of oscs) o.stop();
       setTimeout(() => {
