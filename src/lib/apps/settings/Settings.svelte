@@ -181,6 +181,10 @@
     settings.update({ use24hClock: use24 });
     play('toggle');
   }
+  function setMusic(on: boolean) {
+    settings.update({ musicEnabled: on });
+    play('toggle');
+  }
 </script>
 
 <div class="fl-app">
@@ -219,6 +223,20 @@
           onchange={() => play('tap')}
           aria-label="volume"
         />
+      </div>
+      <div class="line">
+        <span class="line-col">
+          <span class="line-label">menu music</span>
+          <span class="line-hint">soft ambient music while you're on the home pages. off by default.</span>
+        </span>
+        <button
+          class="switch"
+          class:on={s.musicEnabled}
+          role="switch"
+          aria-checked={s.musicEnabled}
+          aria-label="menu music"
+          onclick={() => setMusic(!s.musicEnabled)}
+        ><i></i></button>
       </div>
     </section>
 

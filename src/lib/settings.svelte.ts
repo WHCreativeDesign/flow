@@ -37,6 +37,13 @@ export interface FlowSettings {
   graphics: 1 | 2 | 3;
   /** assistant surfaces on the glance page (summary, suggestions, ask) */
   aiEnabled: boolean;
+  /*
+    Wii U-menu-style ambient background music on the home pages. Off by
+    default: background music is a bigger ask on a shared household terminal
+    than any single UI sound is, so unlike every other sound setting this one
+    opts in rather than out.
+  */
+  musicEnabled: boolean;
 }
 
 const KEY = 'flow.settings';
@@ -48,7 +55,8 @@ const defaults: FlowSettings = {
   deviceLabel: 'this terminal',
   use24hClock: false,
   graphics: 3,
-  aiEnabled: true
+  aiEnabled: true,
+  musicEnabled: false
 };
 
 function load(): FlowSettings {
