@@ -1,6 +1,6 @@
 import { instance } from './sync';
 import { idb } from './storage/idb';
-import { codeOf, type Forecast, type Place } from './data/weather';
+import { codeOf, toF, type Forecast, type Place } from './data/weather';
 import { supabase } from './sync/supabase';
 
 /*
@@ -34,7 +34,10 @@ interface StoredNote {
   updated: number;
 }
 
-function weatherNote(wx: Forecast, place: Place): Note | null {
+/* The unit is the Weather app's own toggle (°F/°C), read off the same
+   instance state it's saved to — so a glance card can never show a
+   different unit than the app it's a shortcut to. */
+function weatherNote(wx: Forecast, place: Place, useF: boolean): Note | null {
   // a real alert or nothing — the next wet hour, read from the forecast
   const wet = wx.hourly.slice(1, 13).find((h) => h.precip >= 50);
   if (wet) {
@@ -52,11 +55,11 @@ function weatherNote(wx: Forecast, place: Place): Note | null {
   return {
     id: 'wx-now',
     kind: 'weather',
-    title: `${Math.round(wx.tempC)}° and ${codeOf(wx.code).label}`,
-    body: `feels ${Math.round(wx.feelsC)}° in ${place.name.split(',')[0].toLowerCase()}`,
+    title: `${toF(wx.tempC, useF)}° and ${codeOf(wx.code).label}`,
+    body: `feels ${toF(wx.feelsC, useF)}° in ${place.name.split(',')[0].toLowerCase()}`,
     app: 'weather',
     glyph: codeOf(wx.code).glyph,
-    signature: `wx-now:${wx.code}:${Math.round(wx.tempC)}`
+    signature: `wx-now:${wx.code}:${toF(wx.tempC, useF)}`
   };
 }
 
@@ -141,7 +144,8 @@ export async function collect(): Promise<Note[]> {
     try {
       const { fetchForecast } = await import('./data/weather');
       const wx = await fetchForecast(place);
-      const n = weatherNote(wx, place);
+      const useF = typeof weatherState?.useF === 'boolean' ? (weatherState.useF as boolean) : false;
+      const n = weatherNote(wx, place, useF);
       if (n) out.push(n);
     } catch {
       /* offline: the glance simply carries no weather line */

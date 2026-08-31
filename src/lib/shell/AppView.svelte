@@ -28,11 +28,18 @@
   });
 
   /* Tier 1 (see settings.svelte.ts): border-radius is not a compositor
-     property — changing it forces a repaint of the clip shape on every
-     single call, and paint() runs on every pointermove of a drag, i.e. far
-     more often than any other animation in the app. Skipping it there is
-     the single biggest win available for a dragged app on a weak GPU; the
-     transform (translate + scale) still carries the whole gesture. */
+     property — changing it forces a repaint of the clip shape at the
+     element's full layout size, regardless of what scale it's currently
+     drawn at. paint() runs on every pointermove of a drag, far more often
+     than any other write in the app, so this is the one spot where
+     skipping it outright (rather than just animating it) is safe: the
+     value never changes at all during a tier-1 drag, so there is no jump
+     to glitch on, only a cost that isn't paid. The transform (translate +
+     scale) still carries the whole gesture on its own. It does NOT skip
+     border-radius in settle()/close() below, or in the CSS mount-open
+     transition — a discrete jump to the target radius while the app is
+     still near full size is a single large clip-mask repaint, which is
+     worse than the ongoing interpolation it would replace, not better. */
   function cheapGfx() {
     return settings.current.graphics === 1;
   }
@@ -67,12 +74,14 @@
     const speed = Math.max(r.velocity, 0.35);
     const ms = Math.min(520, Math.max(170, distance / speed));
 
-    // tier 1 drops border-radius from the transition list entirely, so the
-    // borderRadius writes below still happen — they just snap in one frame
-    // instead of interpolating across the whole curve
-    el.style.transition = cheapGfx()
-      ? `transform ${ms}ms var(--ease-bloom), opacity ${ms * 0.8}ms ease`
-      : `transform ${ms}ms var(--ease-bloom), opacity ${ms * 0.8}ms ease, border-radius ${ms}ms var(--ease-bloom)`;
+    /* border-radius always animates here, at every tier — see the note by
+       cheapGfx() above. A dragged app can still be near full size the
+       moment it's released, and jumping its corner radius straight to the
+       target value at that size is one big, visible clip-mask repaint of a
+       viewport-sized layer: on a weak GPU that is a dropped, glitched frame,
+       not a saved one. Interpolating it costs more total work but spreads
+       that work over many small frames instead of one large one. */
+    el.style.transition = `transform ${ms}ms var(--ease-bloom), opacity ${ms * 0.8}ms ease, border-radius ${ms}ms var(--ease-bloom)`;
 
     if (to === 'gone') {
       // collapse back into the orb it grew from
@@ -113,9 +122,8 @@
     closing = true;
     dragging = false;
     play('home');
-    el.style.transition = cheapGfx()
-      ? `transform ${CLOSE_MS}ms var(--ease-bloom), opacity ${CLOSE_MS * 0.7}ms ease`
-      : `transform ${CLOSE_MS}ms var(--ease-bloom), opacity ${CLOSE_MS * 0.7}ms ease, border-radius ${CLOSE_MS}ms var(--ease-bloom)`;
+    // border-radius animates here too — see the note in settle() above.
+    el.style.transition = `transform ${CLOSE_MS}ms var(--ease-bloom), opacity ${CLOSE_MS * 0.7}ms ease, border-radius ${CLOSE_MS}ms var(--ease-bloom)`;
     el.style.transform = 'scale(0.06)';
     el.style.opacity = '0';
     el.style.borderRadius = '50%';
@@ -207,22 +215,15 @@
   }
 
   /*
-    Tier 1: this is the single heaviest animation in the whole app — a
-    full-viewport surface, and JS already stops writing border-radius to it
-    (see paint()/settle()/close() above) for a drag or an explicit close.
-    This covers the third path, the initial mount-open transition, which is
-    driven by the .open class rather than JS: dropping border-radius from
-    the transition list here means the browser applies the new value in one
-    frame instead of interpolating the clip shape across --bloom-duration.
-    The held-object shadow goes too — a static box-shadow on a transform-only
-    layer is cheap, but a 90px blur radius is still real work to rasterise
-    the first time the class lands, and it happens on every drag start.
+    Tier 1: the held-object shadow goes — a static box-shadow on a
+    transform-only layer is cheap once it's settled, but a 90px blur radius
+    is still real work to rasterise the first time the class lands, and
+    that happens on every drag start. border-radius is deliberately left
+    alone here (see the note by cheapGfx() in the script) — the mount-open
+    transition, like settle()/close(), keeps animating it smoothly at every
+    tier, because the alternative (a discrete jump at large size) is a
+    bigger single repaint than the interpolation it would replace.
   */
-  :global(html[data-gfx='1']) .bloom {
-    transition:
-      transform var(--bloom-duration) var(--ease-bloom),
-      opacity 0.42s ease;
-  }
   :global(html[data-gfx='1']) .bloom.dragging,
   :global(html[data-gfx='1']) .bloom.closing {
     box-shadow: none;
