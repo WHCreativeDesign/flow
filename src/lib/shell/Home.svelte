@@ -3,6 +3,7 @@
   import Field from './pages/Field.svelte';
   import { pager, type PageDrag, type PageRelease } from '../gestures/pager';
   import { play } from '../sound/engine';
+  import { deferredPause } from '../deferredPause.svelte';
   import type { BloomOrigin } from './state.svelte';
 
   interface Props {
@@ -16,8 +17,34 @@
 
   const PAGES = 2;
 
+  /*
+    Each page's own animations pause and resume a beat off from the instant
+    `page` actually changes — that instant is also when the pager commits
+    its own settle transition, and toggling a whole page's idle motion in
+    the same tick used to show up as a visible flash right as a swipe
+    landed (in either direction). See deferredPause.svelte.ts.
+  */
+  const glanceOccluded = $derived(paused || page !== 0);
+  const glanceSettled = deferredPause(() => glanceOccluded);
+  const fieldOccluded = $derived(paused || page !== 1);
+  const fieldSettled = deferredPause(() => fieldOccluded);
+
   let track: HTMLDivElement | undefined = $state();
   let dragging = $state(false);
+  /*
+    True from the moment a drag is released until its settle transition has
+    actually finished. `page` itself only updates once the parent hands a
+    new value back down through onpage() — a round trip that does not land
+    in the same tick release() runs in. Without this flag, the instant
+    `dragging` went false the template's own style:transform/style:transition
+    bindings below reactivated using the still-stale `page`, fighting the
+    imperative write two lines below it for control of the same properties —
+    which is what showed up as the destination page flashing right as a
+    swipe landed. Holding the declarative bindings off until settling is
+    also done removes the race instead of trying to win it.
+  */
+  let settling = $state(false);
+  let settleTimer: ReturnType<typeof setTimeout> | undefined;
   /* Live position during a drag, mirrored into state only for the dots and
      parallax — the track transform itself is written straight to the node. */
   let dragPosition = $state(0);
@@ -33,7 +60,9 @@
   }
 
   function onstart() {
+    clearTimeout(settleTimer);
     dragging = true;
+    settling = false;
     if (track) track.style.transition = 'none';
   }
 
@@ -44,6 +73,7 @@
     if (!track) return;
     const remaining = Math.abs(r.page - position) * (track.clientWidth || window.innerWidth);
     const ms = Math.min(560, Math.max(220, remaining / Math.max(r.velocity, 0.4)));
+    settling = true;
     track.style.transition = `transform ${ms}ms var(--ease-bloom)`;
     track.style.transform = `translate3d(${-r.page * 100}%, 0, 0)`;
     dragPosition = r.page;
@@ -51,7 +81,10 @@
       play('page');
       onpage(r.page);
     }
+    clearTimeout(settleTimer);
+    settleTimer = setTimeout(() => (settling = false), ms);
   }
+  $effect(() => () => clearTimeout(settleTimer));
 
   function go(next: number) {
     if (next === page || next < 0 || next >= PAGES) return;
@@ -79,19 +112,20 @@
   class="home"
   class:paused
   class:dragging
+  class:settling
   use:pager={{ page, pages: PAGES, bottomReserve: 52, onstart, onmove: paint, onrelease: release }}
 >
   <div
     bind:this={track}
     class="track"
-    style:transform={dragging ? undefined : `translate3d(${-page * 100}%, 0, 0)`}
-    style:transition={dragging ? 'none' : `transform 520ms var(--ease-bloom)`}
+    style:transform={dragging || settling ? undefined : `translate3d(${-page * 100}%, 0, 0)`}
+    style:transition={dragging || settling ? 'none' : `transform 520ms var(--ease-bloom)`}
   >
     <section class="page" aria-hidden={page !== 0}>
-      <Glance paused={paused || page !== 0} away={Math.min(1, Math.abs(position - 0))} onopen={openFrom} />
+      <Glance paused={glanceSettled.current} away={Math.min(1, Math.abs(position - 0))} onopen={openFrom} />
     </section>
     <section class="page" aria-hidden={page !== 1}>
-      <Field {onopen} paused={paused || page !== 1} away={Math.min(1, Math.abs(position - 1))} />
+      <Field {onopen} paused={fieldSettled.current} away={Math.min(1, Math.abs(position - 1))} />
     </section>
   </div>
 
@@ -214,7 +248,8 @@
     height: 100%;
     width: 100%;
   }
-  .home.dragging .track {
+  .home.dragging .track,
+  .home.settling .track {
     will-change: transform;
   }
   .page {
