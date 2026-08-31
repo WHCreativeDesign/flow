@@ -259,6 +259,14 @@ Two cues are exempt and keep their voice exactly, because they are the two the s
 
 Every node a cue creates is torn down when its voice ends — a cue that leaves nodes on the bus keeps them in the render graph forever, and the graph is processed every quantum. Volume and mute live in settings.
 
+### Menu music
+
+An optional ambient bed plays on the home pages, in the style of the Wii U menu: a slow detuned drone under a lowpass whose corner breathes on its own LFO, with sparse plucked chimes dropped over it from the same D pentatonic every cue above uses. It is an original generative composition, not a transcription of anyone's actual soundtrack — closer to wind chimes over a held chord than a fixed tune, so there is no melody to recognise.
+
+It is **off by default**, unlike every other sound setting here, because background music playing continuously on a shared household terminal is a bigger ask than a UI blip firing once. `settings.musicEnabled` toggles it from the sound panel.
+
+It runs on its own gain bus straight to the destination rather than through the shared `master` bus every cue plays through: muting UI sound and muting ambient music are different requests, so they stay two independent controls instead of one master switch pretending to be both. `startMenuMusic()`/`stopMenuMusic()` in `engine.ts` fade it in and out and are idempotent, driven from `App.svelte` by `shell.state === 'home' && settings.musicEnabled`, paused whenever the tab is hidden — the same occlusion rule everything else on the atmosphere obeys.
+
 ## Performance contract
 
 The atmosphere is the most expensive thing on screen, so it obeys hard rules: **no `filter`, no `mix-blend-mode`, and nothing animated except `transform`.** Filters and blend modes force the compositor to re-rasterize and read back full-screen layers every frame, forever, and the cost grows with whatever is drawn above them. Softness comes from gradient alpha falloff instead — it rasterizes once and is then only ever moved.

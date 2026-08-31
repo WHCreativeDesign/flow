@@ -431,3 +431,136 @@ export function play(name: CueName) {
   if (!ac || !master || !room) return;
   cues[name](ac, ac.currentTime + 0.001);
 }
+
+/*
+  Ambient home-screen music, in the style of the Wii U menu: soft, spacious,
+  never insistent. This is an original generative bed, not a transcription of
+  any actual soundtrack — a slow detuned drone under a lowpass whose cutoff
+  breathes on its own LFO, with sparse plucked chimes dropped over it at
+  randomized intervals from the same D pentatonic every other cue in this file
+  uses. Nothing here is a fixed melody that could be recognised as someone
+  else's; it is closer to wind chimes over a held chord than a tune.
+
+  On its own gain bus straight to the destination, not through `master`: a
+  person turning UI sound off is muting button taps and confirmations, not
+  necessarily asking for silence in the room, and the two are independent
+  settings for the same reason. It does share the one AudioContext instance
+  everything else here uses — starting it for the first time is what creates
+  that context if no cue has played yet.
+*/
+const MENU_CHIME_NOTES = [D4, E4, Fs4, A4, D5, Fs5, A5, D6];
+
+let musicGain: GainNode | null = null;
+let musicOn = false;
+let musicTimer: ReturnType<typeof setTimeout> | undefined;
+let musicVoices: Array<{ stop: () => void }> = [];
+
+/* The held drone: three detuned triangles an octave-plus down, under a
+   lowpass whose corner drifts slowly so the chord never sits static. */
+function menuDrone(ac: AudioContext, bus: GainNode): { stop: () => void } {
+  const filt = ac.createBiquadFilter();
+  filt.type = 'lowpass';
+  filt.frequency.value = 900;
+  filt.Q.value = 0.4;
+  filt.connect(bus);
+
+  const lfo = ac.createOscillator();
+  lfo.frequency.value = 0.045; // one slow sweep roughly every 22s
+  const lfoGain = ac.createGain();
+  lfoGain.gain.value = 260;
+  lfo.connect(lfoGain).connect(filt.frequency);
+  lfo.start();
+
+  const oscs: OscillatorNode[] = [];
+  for (const base of [D4, A4, Fs4]) {
+    const osc = ac.createOscillator();
+    osc.type = 'triangle';
+    osc.frequency.value = base / 2;
+    osc.detune.value = (Math.random() * 2 - 1) * 6;
+    const g = ac.createGain();
+    g.gain.value = 0.045;
+    osc.connect(g).connect(filt);
+    osc.start();
+    oscs.push(osc);
+  }
+
+  return {
+    stop() {
+      lfo.stop();
+      for (const o of oscs) o.stop();
+      setTimeout(() => {
+        lfo.disconnect();
+        lfoGain.disconnect();
+        filt.disconnect();
+      }, 60);
+    }
+  };
+}
+
+/* One soft, bell-like chime — a single sine with a long, quiet decay. */
+function menuChime(ac: AudioContext, bus: GainNode) {
+  const freq = MENU_CHIME_NOTES[Math.floor(Math.random() * MENU_CHIME_NOTES.length)];
+  const at = ac.currentTime + 0.02;
+  const osc = ac.createOscillator();
+  const g = ac.createGain();
+  osc.type = 'sine';
+  osc.frequency.value = freq;
+  g.gain.setValueAtTime(0.0001, at);
+  g.gain.exponentialRampToValueAtTime(0.05, at + 0.08);
+  g.gain.exponentialRampToValueAtTime(0.0001, at + 2.6);
+  osc.connect(g).connect(bus);
+  if (room) g.connect(room);
+  osc.start(at);
+  osc.stop(at + 2.7);
+  osc.onended = () => {
+    osc.disconnect();
+    g.disconnect();
+  };
+}
+
+function scheduleMenuChimes(ac: AudioContext, bus: GainNode) {
+  menuChime(ac, bus);
+  const next = 2600 + Math.random() * 3600; // 2.6–6.2s apart, unhurried
+  musicTimer = setTimeout(() => {
+    if (musicOn) scheduleMenuChimes(ac, bus);
+  }, next);
+}
+
+/** Fades the ambient bed in. Idempotent — a second call while playing is a no-op. */
+export function startMenuMusic() {
+  if (musicOn) return;
+  const ac = ensure();
+  if (!ac) return;
+  musicOn = true;
+
+  musicGain = ac.createGain();
+  musicGain.gain.setValueAtTime(0.0001, ac.currentTime);
+  musicGain.gain.exponentialRampToValueAtTime(0.4, ac.currentTime + 1.8);
+  musicGain.connect(ac.destination);
+
+  musicVoices = [menuDrone(ac, musicGain)];
+  scheduleMenuChimes(ac, musicGain);
+}
+
+/** Fades the ambient bed out and tears every node down. Idempotent. */
+export function stopMenuMusic() {
+  if (!musicOn) return;
+  musicOn = false;
+  clearTimeout(musicTimer);
+
+  const ac = ctx;
+  const gain = musicGain;
+  const voices = musicVoices;
+  musicGain = null;
+  musicVoices = [];
+
+  if (!ac || !gain) {
+    for (const v of voices) v.stop();
+    return;
+  }
+  gain.gain.setTargetAtTime(0.0001, ac.currentTime, 0.5);
+  setTimeout(() => {
+    for (const v of voices) v.stop();
+    gain.disconnect();
+  }, 1400);
+}
