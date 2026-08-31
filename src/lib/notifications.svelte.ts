@@ -33,11 +33,6 @@ interface StoredNote {
   text: string;
   updated: number;
 }
-interface StoredThread {
-  id: string;
-  name: string;
-  msgs: { text: string; at: number }[];
-}
 
 function weatherNote(wx: Forecast, place: Place): Note | null {
   // a real alert or nothing — the next wet hour, read from the forecast
@@ -96,12 +91,31 @@ async function dueReminders(): Promise<Array<{ id: string; text: string; due_at:
   }
 }
 
+/* The shared board: the single newest message from anyone on the instance,
+   not just the signed-in user's own — see flow_shared_messaging. */
+async function latestMessage(): Promise<{ thread: string; text: string; at: number } | null> {
+  try {
+    const { data } = await supabase()
+      .from('thread_messages')
+      .select('text, at, thread_id, message_threads(name)')
+      .order('at', { ascending: false })
+      .limit(1);
+    const row = data?.[0] as
+      | { text: string; at: string; thread_id: string; message_threads: { name: string } | null }
+      | undefined;
+    if (!row) return null;
+    return { thread: row.message_threads?.name ?? 'message', text: row.text, at: new Date(row.at).getTime() };
+  } catch {
+    return null;
+  }
+}
+
 export async function collect(): Promise<Note[]> {
   const out: Note[] = [];
 
-  const [notesState, msgState, weatherState, reminders] = await Promise.all([
+  const [notesState, latest, weatherState, reminders] = await Promise.all([
     instance.getAppState('notes'),
-    instance.getAppState('messages'),
+    latestMessage(),
     instance.getAppState('weather'),
     dueReminders()
   ]);
@@ -134,10 +148,6 @@ export async function collect(): Promise<Note[]> {
     }
   }
 
-  const threads = (msgState?.threads as StoredThread[] | undefined) ?? [];
-  const latest = threads
-    .flatMap((t) => t.msgs.map((m) => ({ thread: t.name, ...m })))
-    .sort((a, b) => b.at - a.at)[0];
   if (latest) {
     out.push({
       id: 'msg-latest',
