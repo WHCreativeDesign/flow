@@ -11,11 +11,17 @@
   import { assistant } from './lib/ai/assistant.svelte';
   import { glanceAI } from './lib/ai/glance.svelte';
   import { startMenuMusic, stopMenuMusic } from './lib/sound/engine';
+  import { deferredPause } from './lib/deferredPause.svelte';
 
   // While an app is open it covers the screen: home and the atmosphere below
   // it are occluded, so they hold their pixels and stop animating. Nothing a
   // person can see stops breathing.
   const occluded = $derived(shell.state === 'app');
+  // Deferred by a beat in both directions: pausing home's field of orbs and
+  // the atmosphere lands after an opening app's own mount has settled, and
+  // un-pausing lands after a closing app's teardown has — never in the same
+  // frame as either. See deferredPause.svelte.ts.
+  const occludedSettled = deferredPause(() => occluded);
 
   // Ambient home music, off by default (settings.musicEnabled). It only
   // plays on the home pages themselves — never over idle, an open app, or a
@@ -66,7 +72,7 @@
 <svelte:window onpointerdown={() => shell.touch()} onkeydown={() => shell.touch()} />
 <svelte:document onvisibilitychange={() => (pageVisible = !document.hidden)} />
 
-<Atmosphere paused={occluded} />
+<Atmosphere paused={occludedSettled.current} />
 
 <main>
   {#if !auth.ready}
@@ -82,7 +88,7 @@
          whole orb field on every open and every exit. -->
     <Home
       onopen={(id, origin) => shell.open(id, origin)}
-      paused={occluded}
+      paused={occludedSettled.current}
       page={shell.homePage}
       onpage={(p) => shell.setHomePage(p)}
     />
