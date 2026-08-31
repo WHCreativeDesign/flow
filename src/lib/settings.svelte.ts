@@ -26,13 +26,22 @@ export interface FlowSettings {
       1  low — no idle movement, no decorative depth, fewer drawn objects,
          same as normal below, PLUS the things that actually strain a weak
          GPU: no live backdrop blur (every `.fl-glass` panel falls back to a
-         solid gradient instead of sampling what's behind it), and the
-         handful of triggered animations that were otherwise untouched —
-         app open/close, an orb's press feedback, a chat bubble arriving —
-         have the expensive property in them (border-radius, box-shadow,
-         filter) snap instead of interpolate. The motion is the same shape;
-         the per-frame cost of it is not. This is the tier a Chromebook or
-         similar integrated-GPU device needs to stay smooth.
+         solid gradient instead of sampling what's behind it), an orb's
+         press shadow stops interpolating, a chat bubble fades in by opacity
+         instead of an animated blur filter, and dragging an open app skips
+         animating its corner radius entirely (that write lands on every
+         pointermove, not once per gesture). This is the tier a Chromebook
+         or similar integrated-GPU device needs to stay smooth.
+
+         Deliberately NOT touched, even at this tier: the border-radius
+         curve on app open, close, and a drag's release. All three keep it
+         smooth everywhere. border-radius is paid for by the element's full
+         layout size, not its current on-screen scale, so snapping it
+         straight to the target while the app is still large is one big
+         clip-mask repaint rather than many small ones — a version of this
+         shipped once and showed up as a glitched, flashing frame on real
+         hardware. Interpolating costs more total work but spreads it out,
+         which is what actually reads as smooth.
       2  normal — flat. Same animations, same gradients, but no idle movement
          at all, no decorative depth (shadows, grain, blur-ish stacks), and
          fewer drawn objects. (This tier used to be called "low" — most
@@ -44,8 +53,9 @@ export interface FlowSettings {
     Tiers 2 and 3 keep transitions identical on purpose — a cheap device
     should still feel like the same system responding to you, and what it
     should not do is burn a battery animating things nobody asked to move.
-    Tier 1 is the one exception: it changes the triggered transitions too,
-    because on the hardware it targets those were the actual bottleneck.
+    Tier 1 changes a few things you actually triggered too, but only the
+    ones where dropping them is unambiguously cheaper, not the ones where
+    it just looks that way — see the app-open/close note above.
   */
   graphics: 1 | 2 | 3;
   /** assistant surfaces on the glance page (summary, suggestions, ask) */
