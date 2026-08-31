@@ -6,6 +6,7 @@ import Weather from './weather/Weather.svelte';
 import Music from './music/Music.svelte';
 import Settings from './settings/Settings.svelte';
 import Assistant from './assistant/Assistant.svelte';
+import FlowStore from './flowstore/FlowStore.svelte';
 
 /*
   The app registry. Icons are stroke paths on a 24×24 viewBox so the same
@@ -55,6 +56,12 @@ export const apps: FlowApp[] = [
     label: 'flow',
     icon: '<path d="M12 3.6a8.4 8.4 0 0 0-7.2 12.8L3.6 20.4l4-1.2A8.4 8.4 0 1 0 12 3.6z"/><path d="M9 11h6M9 14h3.5"/>',
     component: Assistant
+  },
+  {
+    id: 'flowstore',
+    label: 'store',
+    icon: '<path d="M6 8h12l1 12a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1L6 8z"/><path d="M9 8V6a3 3 0 0 1 6 0v2"/>',
+    component: FlowStore
   },
   {
     id: 'settings',
