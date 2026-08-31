@@ -164,21 +164,10 @@
   }
 
   /*
-    Tier 2 — normal. Every gradient still draws; half the bokeh stops being
-    drawn at all. Object count is the cheapest thing to give up, because each
-    one is an extra layer the compositor carries on every single frame.
-  */
-  :global(html[data-gfx='2']) .bk4,
-  :global(html[data-gfx='2']) .bk6,
-  :global(html[data-gfx='2']) .bk8 {
-    display: none;
-  }
-  :global(html[data-gfx='2']) .caustics {
-    animation-duration: 48s;
-  }
-
-  /*
-    Tier 1 — low. The rule is: same gradients, no idle movement, fewer objects.
+    Tier 2 — normal (was tier 1's rule before the tiers were renumbered so
+    that "normal" is the flat/static look and "low" is reserved for actually
+    weak hardware — see settings.svelte.ts). Same gradients, no idle
+    movement, fewer objects.
 
     So the sky, aurora, streak and their gradients all still paint — the look
     survives — but nothing loops. An idle animation is the one cost that never
@@ -186,18 +175,30 @@
     anyone is looking at it. That is what a weak device cannot afford, and it
     is also the part nobody asked for. Transitions the person actually
     triggers are untouched.
+
+    Tier 1 gets the identical treatment here — the atmosphere was already as
+    cheap as tier 2 could make it without changing the look, so tier 1's
+    extra savings all live elsewhere (backdrop-filter, and the triggered
+    animations in AppView/Orb/Assistant that were still interpolating an
+    expensive property on their own duration).
   */
   :global(html[data-gfx='1']) .aurora,
   :global(html[data-gfx='1']) .bloom-streak,
   :global(html[data-gfx='1']) .caustics,
-  :global(html[data-gfx='1']) .bk {
+  :global(html[data-gfx='1']) .bk,
+  :global(html[data-gfx='2']) .aurora,
+  :global(html[data-gfx='2']) .bloom-streak,
+  :global(html[data-gfx='2']) .caustics,
+  :global(html[data-gfx='2']) .bk {
     animation: none !important;
     will-change: auto;
   }
   /* the two most expensive full-screen layers, and the ones that read as
      texture rather than as colour — the gradients below them remain */
   :global(html[data-gfx='1']) .caustics,
-  :global(html[data-gfx='1']) .grain {
+  :global(html[data-gfx='1']) .grain,
+  :global(html[data-gfx='2']) .caustics,
+  :global(html[data-gfx='2']) .grain {
     display: none;
   }
   /* one bokeh object instead of eight, kept so the depth does not read flat */
@@ -207,7 +208,14 @@
   :global(html[data-gfx='1']) .bk5,
   :global(html[data-gfx='1']) .bk6,
   :global(html[data-gfx='1']) .bk7,
-  :global(html[data-gfx='1']) .bk8 {
+  :global(html[data-gfx='1']) .bk8,
+  :global(html[data-gfx='2']) .bk2,
+  :global(html[data-gfx='2']) .bk3,
+  :global(html[data-gfx='2']) .bk4,
+  :global(html[data-gfx='2']) .bk5,
+  :global(html[data-gfx='2']) .bk6,
+  :global(html[data-gfx='2']) .bk7,
+  :global(html[data-gfx='2']) .bk8 {
     display: none;
   }
 </style>

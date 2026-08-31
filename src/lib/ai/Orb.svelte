@@ -98,11 +98,14 @@
     }
   }
 
-  /* Tier 1: the orb still marks the reply and still appears, it just stops
-     idling. Same rule as everything else — gradients stay, loops go. */
+  /* Tiers 1 and 2: the orb still marks the reply and still appears, it just
+     stops idling. Same rule as everything else — gradients stay, loops go. */
   :global(html[data-gfx='1']) .orb.active,
   :global(html[data-gfx='1']) .active .sheen,
-  :global(html[data-gfx='1']) .active .glint {
+  :global(html[data-gfx='1']) .active .glint,
+  :global(html[data-gfx='2']) .orb.active,
+  :global(html[data-gfx='2']) .active .sheen,
+  :global(html[data-gfx='2']) .active .glint {
     animation: none;
   }
 </style>

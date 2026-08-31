@@ -475,6 +475,17 @@
   @media (prefers-reduced-motion: reduce) {
     .turn { animation: none; }
   }
+  /* Tier 1: animating `filter` forces a repaint pass every frame, unlike
+     opacity — and a chat history opens with every past turn mounting at
+     once, so this is the one place in the app where several of these can
+     fire at the same instant on a weak GPU. Same fade, no filter. */
+  :global(html[data-gfx='1']) .turn {
+    animation: turn-in-cheap 0.3s ease both;
+  }
+  @keyframes turn-in-cheap {
+    from { opacity: 0; }
+    to { opacity: 1; }
+  }
   /* the question: small, contained, right — it is an aside, not the document */
   .turn.user {
     justify-content: flex-end;

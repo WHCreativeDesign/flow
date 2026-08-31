@@ -23,16 +23,29 @@ export interface FlowSettings {
   /*
     Graphics tier, 1..3.
 
-      1  low — flat. Same animations, same gradients, but no idle movement at
-         all, no decorative depth (shadows, grain, blur-ish stacks), and fewer
-         drawn objects. Aimed at weak hardware: what it removes is the work
-         that never stops, not the motion you asked for.
-      2  normal — ambient drift at a reduced object count.
+      1  low — no idle movement, no decorative depth, fewer drawn objects,
+         same as normal below, PLUS the things that actually strain a weak
+         GPU: no live backdrop blur (every `.fl-glass` panel falls back to a
+         solid gradient instead of sampling what's behind it), and the
+         handful of triggered animations that were otherwise untouched —
+         app open/close, an orb's press feedback, a chat bubble arriving —
+         have the expensive property in them (border-radius, box-shadow,
+         filter) snap instead of interpolate. The motion is the same shape;
+         the per-frame cost of it is not. This is the tier a Chromebook or
+         similar integrated-GPU device needs to stay smooth.
+      2  normal — flat. Same animations, same gradients, but no idle movement
+         at all, no decorative depth (shadows, grain, blur-ish stacks), and
+         fewer drawn objects. (This tier used to be called "low" — most
+         people who went looking for a graphics setting at all wanted this
+         one, so it is the default expectation now and "low" was freed up
+         for hardware that actually needs more than a flat look removed.)
       3  full — every layer, every drift.
 
-    Transitions are identical across all three on purpose. A cheap device
-    should still feel like the same system responding to you; what it should
-    not do is burn a battery animating things nobody asked to move.
+    Tiers 2 and 3 keep transitions identical on purpose — a cheap device
+    should still feel like the same system responding to you, and what it
+    should not do is burn a battery animating things nobody asked to move.
+    Tier 1 is the one exception: it changes the triggered transitions too,
+    because on the hardware it targets those were the actual bottleneck.
   */
   graphics: 1 | 2 | 3;
   /** assistant surfaces on the glance page (summary, suggestions, ask) */

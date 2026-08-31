@@ -2,6 +2,7 @@
   import { appById } from '../apps/registry';
   import { dismissGesture, type DismissRelease, type DragSample } from '../gestures/dismiss';
   import { play } from '../sound/engine';
+  import { settings } from '../settings.svelte';
   import type { BloomOrigin } from './state.svelte';
 
   interface Props {
@@ -26,6 +27,16 @@
     return () => cancelAnimationFrame(raf);
   });
 
+  /* Tier 1 (see settings.svelte.ts): border-radius is not a compositor
+     property — changing it forces a repaint of the clip shape on every
+     single call, and paint() runs on every pointermove of a drag, i.e. far
+     more often than any other animation in the app. Skipping it there is
+     the single biggest win available for a dragged app on a weak GPU; the
+     transform (translate + scale) still carries the whole gesture. */
+  function cheapGfx() {
+    return settings.current.graphics === 1;
+  }
+
   /*
     Drag transforms are written straight to the node. Routing 60fps of pointer
     motion through reactive state would re-run effects on every frame for a
@@ -35,6 +46,7 @@
     if (!el) return;
     const scale = 1 - s.progress * 0.42;
     el.style.transform = `translate3d(${s.drift}px, ${-s.travel * 0.28}px, 0) scale(${scale})`;
+    if (cheapGfx()) return;
     // the card stays opaque while held — a held object does not go translucent,
     // and letting home read through it muddies both surfaces
     el.style.borderRadius = `${s.progress * 42}px`;
@@ -55,7 +67,12 @@
     const speed = Math.max(r.velocity, 0.35);
     const ms = Math.min(520, Math.max(170, distance / speed));
 
-    el.style.transition = `transform ${ms}ms var(--ease-bloom), opacity ${ms * 0.8}ms ease, border-radius ${ms}ms var(--ease-bloom)`;
+    // tier 1 drops border-radius from the transition list entirely, so the
+    // borderRadius writes below still happen — they just snap in one frame
+    // instead of interpolating across the whole curve
+    el.style.transition = cheapGfx()
+      ? `transform ${ms}ms var(--ease-bloom), opacity ${ms * 0.8}ms ease`
+      : `transform ${ms}ms var(--ease-bloom), opacity ${ms * 0.8}ms ease, border-radius ${ms}ms var(--ease-bloom)`;
 
     if (to === 'gone') {
       // collapse back into the orb it grew from
@@ -96,7 +113,9 @@
     closing = true;
     dragging = false;
     play('home');
-    el.style.transition = `transform ${CLOSE_MS}ms var(--ease-bloom), opacity ${CLOSE_MS * 0.7}ms ease, border-radius ${CLOSE_MS}ms var(--ease-bloom)`;
+    el.style.transition = cheapGfx()
+      ? `transform ${CLOSE_MS}ms var(--ease-bloom), opacity ${CLOSE_MS * 0.7}ms ease`
+      : `transform ${CLOSE_MS}ms var(--ease-bloom), opacity ${CLOSE_MS * 0.7}ms ease, border-radius ${CLOSE_MS}ms var(--ease-bloom)`;
     el.style.transform = 'scale(0.06)';
     el.style.opacity = '0';
     el.style.borderRadius = '50%';
@@ -185,6 +204,28 @@
   /* the gesture bar has nothing left to grab once the collapse starts */
   .bloom.closing .exit-layer {
     pointer-events: none;
+  }
+
+  /*
+    Tier 1: this is the single heaviest animation in the whole app — a
+    full-viewport surface, and JS already stops writing border-radius to it
+    (see paint()/settle()/close() above) for a drag or an explicit close.
+    This covers the third path, the initial mount-open transition, which is
+    driven by the .open class rather than JS: dropping border-radius from
+    the transition list here means the browser applies the new value in one
+    frame instead of interpolating the clip shape across --bloom-duration.
+    The held-object shadow goes too — a static box-shadow on a transform-only
+    layer is cheap, but a 90px blur radius is still real work to rasterise
+    the first time the class lands, and it happens on every drag start.
+  */
+  :global(html[data-gfx='1']) .bloom {
+    transition:
+      transform var(--bloom-duration) var(--ease-bloom),
+      opacity 0.42s ease;
+  }
+  :global(html[data-gfx='1']) .bloom.dragging,
+  :global(html[data-gfx='1']) .bloom.closing {
+    box-shadow: none;
   }
 
   .surface {
