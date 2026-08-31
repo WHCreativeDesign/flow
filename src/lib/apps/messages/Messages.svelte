@@ -1,27 +1,43 @@
 <script lang="ts">
-  import { instance } from '../../sync';
+  import { supabase } from '../../sync/supabase';
+  import { auth } from '../../auth.svelte';
   import { play } from '../../sound/engine';
   import Pane from '../../components/Pane.svelte';
 
   /*
-    Honest scope: until multi-device sync lands, threads live on this
-    instance — streams of messages to yourself, per topic. The composer,
-    bubbles, and storage are the real thing; the second device is what
-    arrives later.
+    Real messaging between the people on this instance — the thing the old
+    version was honest about not being yet ("streams of messages to
+    yourself... until multi-device sync lands"). Per-user sync landed since
+    that was written, but it only followed one person across their own
+    devices; it never let User 1 reach User 2.
+
+    That needed a different shape underneath, not just a bigger private
+    blob: threads and messages are real rows in a table anyone signed in on
+    this instance can read, not a JSONB document keyed to one user_id. It is
+    the one place in this app where the trust model is a shared board rather
+    than a locked notebook — see the flow_shared_messaging migration.
   */
-  interface Msg {
-    id: string;
-    text: string;
-    at: number;
-  }
-  interface Thread {
+  interface ThreadRow {
     id: string;
     name: string;
-    msgs: Msg[];
+    created_by: string;
+    created_at: string;
+  }
+  interface MsgRow {
+    id: string;
+    thread_id: string;
+    sender_id: string;
+    sender_name: string;
+    text: string;
+    at: string;
   }
 
-  let threads = $state<Thread[]>([]);
+  let threads = $state<ThreadRow[]>([]);
+  /* last line + a bounded recent count per thread, for the list preview only
+     — built from a capped recent fetch, never claims to be the true total */
+  let previews = $state<Record<string, { text: string; at: string }>>({});
   let openId = $state<string | null>(null);
+  let openMsgs = $state<MsgRow[]>([]);
   let draft = $state('');
   let newName = $state('');
   let naming = $state(false);
@@ -29,50 +45,117 @@
   let scroller: HTMLDivElement | undefined = $state();
 
   const openThread = $derived(threads.find((t) => t.id === openId) ?? null);
+  const myId = $derived(auth.user?.id ?? null);
+
+  async function loadThreads() {
+    const { data: t } = await supabase()
+      .from('message_threads')
+      .select('id, name, created_by, created_at')
+      .order('created_at', { ascending: false });
+    threads = t ?? [];
+
+    // a bounded recent slice across the whole board, reduced to one preview
+    // line per thread — this is deliberately not a true per-thread count
+    const { data: recent } = await supabase()
+      .from('thread_messages')
+      .select('thread_id, text, at')
+      .order('at', { ascending: false })
+      .limit(300);
+    const next: Record<string, { text: string; at: string }> = {};
+    for (const m of recent ?? []) if (!next[m.thread_id]) next[m.thread_id] = { text: m.text, at: m.at };
+    previews = next;
+    loaded = true;
+  }
+
+  async function loadMessages(threadId: string) {
+    const { data } = await supabase()
+      .from('thread_messages')
+      .select('id, thread_id, sender_id, sender_name, text, at')
+      .eq('thread_id', threadId)
+      .order('at', { ascending: true });
+    openMsgs = data ?? [];
+    queueMicrotask(() => scroller?.scrollTo({ top: scroller.scrollHeight }));
+  }
 
   $effect(() => {
-    void instance.getAppState('messages').then((s) => {
-      if (s?.threads) threads = s.threads as Thread[];
-      loaded = true;
-    });
+    void loadThreads();
   });
 
-  function persist() {
-    void instance.setAppState('messages', { threads: $state.snapshot(threads) });
-  }
+  $effect(() => {
+    if (openId) void loadMessages(openId);
+    else openMsgs = [];
+  });
 
-  function createThread() {
+  /*
+    Live updates: another user's message — from another session on this
+    instance, not another tab of this same one — should appear without
+    reopening the thread. One channel for the whole shared board, since
+    unlike every other realtime subscription in this app there is no single
+    user_id to filter on here.
+  */
+  $effect(() => {
+    const channel = supabase()
+      .channel('messages-board')
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'message_threads' }, () => {
+        void loadThreads();
+      })
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'thread_messages' }, (payload) => {
+        const row = payload.new as MsgRow;
+        if (row.thread_id === openId) {
+          openMsgs = [...openMsgs, row];
+          queueMicrotask(() => scroller?.scrollTo({ top: scroller.scrollHeight, behavior: 'smooth' }));
+        }
+        previews = { ...previews, [row.thread_id]: { text: row.text, at: row.at } };
+      })
+      .subscribe();
+    return () => void supabase().removeChannel(channel);
+  });
+
+  async function createThread() {
     const name = newName.trim();
-    if (!name) return;
-    const t: Thread = { id: crypto.randomUUID(), name, msgs: [] };
-    threads = [t, ...threads];
+    if (!name || !auth.user) return;
+    const { data, error } = await supabase()
+      .from('message_threads')
+      .insert({ name, created_by: auth.user.id })
+      .select('id, name, created_by, created_at')
+      .single();
     naming = false;
     newName = '';
-    openId = t.id;
+    if (error || !data) return;
+    threads = [data, ...threads];
+    openId = data.id;
     play('tap');
-    persist();
   }
 
-  function send() {
+  async function send() {
     const text = draft.trim();
-    if (!text || !openThread) return;
-    openThread.msgs.push({ id: crypto.randomUUID(), text, at: Date.now() });
+    if (!text || !openThread || !auth.user) return;
     draft = '';
     play('send');
-    persist();
+    const { data } = await supabase()
+      .from('thread_messages')
+      .insert({ thread_id: openThread.id, sender_id: auth.user.id, sender_name: auth.user.displayName, text })
+      .select('id, thread_id, sender_id, sender_name, text, at')
+      .single();
+    if (data) {
+      openMsgs = [...openMsgs, data];
+      previews = { ...previews, [openThread.id]: { text: data.text, at: data.at } };
+    }
     queueMicrotask(() => scroller?.scrollTo({ top: scroller.scrollHeight, behavior: 'smooth' }));
   }
 
-  function removeThread(id: string) {
-    threads = threads.filter((t) => t.id !== id);
-    if (openId === id) openId = null;
+  /* You can only actually remove your own thread — RLS enforces this too,
+     so a stray attempt on someone else's is a silent no-op, not an error. */
+  async function removeThread(t: ThreadRow) {
     play('toggle');
-    persist();
+    await supabase().from('message_threads').delete().eq('id', t.id);
+    threads = threads.filter((x) => x.id !== t.id);
+    if (openId === t.id) openId = null;
   }
 
-  const when = (ts: number) =>
-    new Date(ts).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }).toLowerCase();
-  const lastLine = (t: Thread) => t.msgs.at(-1)?.text ?? 'no messages yet';
+  const when = (iso: string) =>
+    new Date(iso).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }).toLowerCase();
+  const lastLine = (id: string) => previews[id]?.text ?? 'no messages yet';
 </script>
 
 <div class="fl-app messages">
@@ -84,18 +167,21 @@
         threads
       </button>
       <div class="thread-name">{openThread.name}</div>
-      <button class="fl-btn quiet" onclick={() => removeThread(openThread.id)} aria-label="delete thread">
-        <svg viewBox="0 0 24 24"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3" /></svg>
-      </button>
+      {#if openThread.created_by === myId}
+        <button class="fl-btn quiet" onclick={() => removeThread(openThread)} aria-label="delete thread">
+          <svg viewBox="0 0 24 24"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3" /></svg>
+        </button>
+      {/if}
     </div>
 
     <div class="stream fl-scroll" bind:this={scroller}>
-      {#if openThread.msgs.length === 0}
-        <div class="fl-empty"><div>say something — it stays in this stream</div></div>
+      {#if openMsgs.length === 0}
+        <div class="fl-empty"><div>say something — everyone on this instance sees it</div></div>
       {/if}
-      {#each openThread.msgs as m (m.id)}
-        <div class="bubble-row">
+      {#each openMsgs as m (m.id)}
+        <div class="bubble-row" class:mine={m.sender_id === myId}>
           <div class="bubble">
+            {#if m.sender_id !== myId}<span class="sender">{m.sender_name}</span>{/if}
             {m.text}
             <span class="stamp">{when(m.at)}</span>
           </div>
@@ -103,7 +189,7 @@
       {/each}
     </div>
 
-    <form class="composer" onsubmit={(e) => { e.preventDefault(); send(); }}>
+    <form class="composer" onsubmit={(e) => { e.preventDefault(); void send(); }}>
       <input class="fl-input" placeholder="write a message…" bind:value={draft} />
       <button class="fl-btn fl-round primary" type="submit" disabled={!draft.trim()} aria-label="send">
         <svg viewBox="0 0 24 24"><path d="M4 12l16-7-5 7 5 7-16-7zM20 5l-9 7" /></svg>
@@ -113,7 +199,7 @@
     <div class="fl-app-head">
       <div>
         <div class="fl-app-title">messages</div>
-        <div class="fl-app-sub">streams on this instance · device-to-device arrives with sync</div>
+        <div class="fl-app-sub">shared with everyone on this instance</div>
       </div>
       <button class="fl-btn primary" onclick={() => { naming = true; play('tap'); }}>
         <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14" /></svg>
@@ -122,7 +208,7 @@
     </div>
 
     {#if naming}
-      <form class="namer" onsubmit={(e) => { e.preventDefault(); createThread(); }}>
+      <form class="namer" onsubmit={(e) => { e.preventDefault(); void createThread(); }}>
         <!-- svelte-ignore a11y_autofocus -->
         <input class="fl-input" placeholder="name the thread…" bind:value={newName} autofocus />
         <button class="fl-btn primary" type="submit" disabled={!newName.trim()}>create</button>
@@ -132,8 +218,8 @@
 
     {#if loaded && threads.length === 0 && !naming}
       <div class="fl-empty">
-        <div class="big">no streams yet</div>
-        <div>a thread is a stream of messages that lives on your instance</div>
+        <div class="big">no threads yet</div>
+        <div>a thread is shared — anyone signed in on this instance can read and reply</div>
       </div>
     {:else}
       <div class="list fl-scroll">
@@ -142,9 +228,8 @@
             <span class="row-orb" aria-hidden="true">{t.name.slice(0, 1)}</span>
             <span class="row-text">
               <span class="row-name">{t.name}</span>
-              <span class="row-last">{lastLine(t)}</span>
+              <span class="row-last">{lastLine(t.id)}</span>
             </span>
-            {#if t.msgs.length}<span class="row-count">{t.msgs.length}</span>{/if}
           </button>
         {/each}
       </div>
@@ -236,15 +321,6 @@
     overflow: hidden;
     text-overflow: ellipsis;
   }
-  .row-count {
-    flex: none;
-    font-size: 11px;
-    font-weight: 700;
-    color: var(--royal);
-    background: rgba(53, 169, 236, 0.14);
-    border-radius: 99px;
-    padding: 3px 9px;
-  }
 
   .stream {
     flex: 1;
@@ -256,15 +332,26 @@
   }
   .bubble-row {
     display: flex;
-    justify-content: flex-end;
+    justify-content: flex-start;
     flex: none;
+  }
+  .bubble-row.mine {
+    justify-content: flex-end;
   }
   .bubble {
     max-width: 78%;
     padding: 11px 15px;
-    border-radius: 20px 20px 5px 20px;
+    border-radius: 20px 20px 20px 5px;
     font-size: 14.5px;
     line-height: 1.5;
+    color: var(--deep);
+    background: var(--glass-bg);
+    border: var(--glass-border);
+    overflow-wrap: anywhere;
+    animation: bubble-in 0.42s var(--ease-overshoot);
+  }
+  .mine .bubble {
+    border-radius: 20px 20px 5px 20px;
     color: #fff;
     text-shadow: 0 1px 2px rgba(13, 63, 143, 0.25);
     background:
@@ -274,8 +361,17 @@
       inset 0 1.5px 0 rgba(255, 255, 255, 0.6),
       0 8px 18px rgba(13, 63, 143, 0.22);
     border: 1px solid rgba(255, 255, 255, 0.45);
-    overflow-wrap: anywhere;
-    animation: bubble-in 0.42s var(--ease-overshoot);
+  }
+  /* a message from someone else names them; your own never does — you know
+     which ones are yours */
+  .sender {
+    display: block;
+    font-size: 10.5px;
+    font-weight: 700;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+    opacity: 0.55;
+    margin-bottom: 3px;
   }
   @keyframes bubble-in {
     from { opacity: 0; transform: translateY(10px) scale(0.92); }
@@ -298,5 +394,11 @@
   }
   .composer .fl-input {
     flex: 1;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .bubble {
+      animation: none;
+    }
   }
 </style>

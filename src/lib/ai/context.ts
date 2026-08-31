@@ -15,6 +15,12 @@ import { supabase } from '../sync/supabase';
   underneath it cannot return them. One person's terminal is one person's
   terminal.
 
+  Message threads are the one deliberate exception: they are a shared board,
+  not a private notebook, so this reads every thread on the instance and
+  every sender's name, not only the signed-in user's own. See the
+  flow_shared_messaging migration for why that table's RLS is shaped that
+  way on purpose.
+
   The pack is text, assembled fresh per question rather than cached, because
   the whole point is that the assistant knows what is true *now*. It is capped
   hard: a model given fifty notes verbatim will answer about the wrong one,
@@ -44,10 +50,15 @@ interface StoredNote {
   text: string;
   updated: number;
 }
-interface StoredThread {
+interface ThreadRow {
   id: string;
   name: string;
-  msgs: Array<{ id: string; text: string; at: number }>;
+}
+interface ThreadMsgRow {
+  thread_id: string;
+  sender_name: string;
+  text: string;
+  at: string;
 }
 
 function clip(text: string, max: number): string {
@@ -84,6 +95,41 @@ async function photoSummary(): Promise<string> {
   }
 }
 
+/* The shared board: every thread, every sender — not scoped to the signed-in
+   user, unlike everything else this file reads. See the module doc above. */
+async function threadSummary(): Promise<string[]> {
+  const { data: threads } = await supabase()
+    .from('message_threads')
+    .select('id, name')
+    .order('created_at', { ascending: false })
+    .limit(MAX_THREADS);
+  if (!threads?.length) return ['None.'];
+
+  const ids = threads.map((t: ThreadRow) => t.id);
+  const { data: msgs } = await supabase()
+    .from('thread_messages')
+    .select('thread_id, sender_name, text, at')
+    .in('thread_id', ids)
+    .order('at', { ascending: true });
+
+  const byThread = new Map<string, ThreadMsgRow[]>();
+  for (const m of (msgs ?? []) as ThreadMsgRow[]) {
+    const list = byThread.get(m.thread_id) ?? [];
+    list.push(m);
+    byThread.set(m.thread_id, list);
+  }
+
+  const out: string[] = [];
+  for (const t of threads as ThreadRow[]) {
+    const all = byThread.get(t.id) ?? [];
+    out.push(`- [id: ${t.id}] ${t.name} (${all.length} messages)`);
+    for (const m of all.slice(-MAX_MSGS_PER_THREAD)) {
+      out.push(`    [${stamp(new Date(m.at).getTime())}] ${m.sender_name}: ${clip(m.text, 180)}`);
+    }
+  }
+  return out;
+}
+
 async function reminderSummary(): Promise<string[]> {
   if (!auth.user) return ['None.'];
   const { data, error } = await supabase()
@@ -101,9 +147,9 @@ async function reminderSummary(): Promise<string[]> {
 export async function buildContext(): Promise<string> {
   if (!auth.user) return '';
 
-  const [notesState, msgState, weatherState, musicState, cameraState, photos, reminders] = await Promise.all([
+  const [notesState, threadLines, weatherState, musicState, cameraState, photos, reminders] = await Promise.all([
     instance.getAppState('notes'),
-    instance.getAppState('messages'),
+    threadSummary(),
     instance.getAppState('weather'),
     instance.getAppState('music'),
     instance.getAppState('camera'),
@@ -132,19 +178,9 @@ export async function buildContext(): Promise<string> {
     if (notes.length > MAX_NOTES) out.push(`  …and ${notes.length - MAX_NOTES} older notes.`);
   }
 
-  /* --- messages --- */
-  const threads = (msgState?.threads as StoredThread[] | undefined) ?? [];
-  out.push('', `=== Message threads (${threads.length}) ===`);
-  if (!threads.length) {
-    out.push('None.');
-  } else {
-    for (const t of threads.slice(0, MAX_THREADS)) {
-      out.push(`- [id: ${t.id}] ${t.name} (${t.msgs?.length ?? 0} messages)`);
-      for (const m of (t.msgs ?? []).slice(-MAX_MSGS_PER_THREAD)) {
-        out.push(`    [${stamp(m.at)}] ${clip(m.text ?? '', 180)}`);
-      }
-    }
-  }
+  /* --- messages: the shared board, everyone's threads, everyone's senders --- */
+  out.push('', '=== Message threads (shared with everyone on this instance) ===');
+  out.push(...threadLines);
 
   /* --- reminders --- */
   out.push('', '=== Reminders ===');

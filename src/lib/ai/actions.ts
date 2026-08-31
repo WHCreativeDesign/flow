@@ -40,11 +40,6 @@ interface StoredNote {
   text: string;
   updated: number;
 }
-interface StoredThread {
-  id: string;
-  name: string;
-  msgs: Array<{ id: string; text: string; at: number }>;
-}
 
 async function applySetting(attrs: Record<string, string>): Promise<string> {
   const key = attrs.key;
@@ -138,26 +133,35 @@ async function setWeatherPlace(attrs: Record<string, string>): Promise<string> {
   return `weather place set to ${place.name}`;
 }
 
+/* Messages is the shared board (see flow_shared_messaging): this posts as
+   the signed-in user into a table anyone on the instance can read, not a
+   private per-user blob like every other action here. */
 async function sendMessage(attrs: Record<string, string>, content: string): Promise<string> {
   const target = attrs.thread?.trim();
   const text = content.trim();
-  if (!target || !text) return 'a thread and a message are both required';
+  if (!target || !text || !auth.user) return 'a thread and a message are both required';
 
-  const state = await instance.getAppState('messages');
-  const threads = ((state?.threads as StoredThread[] | undefined) ?? []).slice();
-
-  let thread = threads.find((t) => t.id === target);
-  if (!thread) thread = threads.find((t) => t.name.toLowerCase() === target.toLowerCase());
+  const { data: threads } = await supabase().from('message_threads').select('id, name');
+  let thread = (threads ?? []).find((t) => t.id === target);
+  if (!thread) thread = (threads ?? []).find((t) => t.name.toLowerCase() === target.toLowerCase());
 
   let created = false;
   if (!thread) {
-    thread = { id: crypto.randomUUID(), name: target, msgs: [] };
-    threads.unshift(thread);
+    const { data, error } = await supabase()
+      .from('message_threads')
+      .insert({ name: target, created_by: auth.user.id })
+      .select('id, name')
+      .single();
+    if (error || !data) return "couldn't start that thread";
+    thread = data;
     created = true;
   }
-  thread.msgs.push({ id: crypto.randomUUID(), text, at: Date.now() });
 
-  await instance.setAppState('messages', { threads });
+  const { error } = await supabase()
+    .from('thread_messages')
+    .insert({ thread_id: thread.id, sender_id: auth.user.id, sender_name: auth.user.displayName, text });
+  if (error) return "couldn't send that message";
+
   return created ? `started "${thread.name}" and sent your message` : `sent to "${thread.name}"`;
 }
 

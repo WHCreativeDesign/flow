@@ -53,11 +53,23 @@ at all** — the publishable key cannot read a single row of either. Every
 credential path goes through a `SECURITY DEFINER` function instead.
 
 Everything a person owns follows them to any terminal they sign in on: notes,
-message threads, assistant chat history, the camera gallery index, the music
-playlist, weather places, cleared glance cards, and their settings. One policy
-shape does the work — `user_id = current_user_id()`, where `current_user_id()`
-resolves the `x-flow-token` header against live sessions. A terminal with no
-session sees nothing.
+assistant chat history, the camera gallery index, the music playlist, weather
+places, cleared glance cards, and their settings. One policy shape does the
+work — `user_id = current_user_id()`, where `current_user_id()` resolves the
+`x-flow-token` header against live sessions. A terminal with no session sees
+nothing.
+
+Messages are the one deliberate exception. `message_threads` and
+`thread_messages` are shared, not owner-scoped: anyone signed in on the
+instance can read every thread and every sender's name, because Messages is
+meant as real communication between the people in the house, not a private
+per-user scratchpad. RLS still enforces the boundary that matters — a person
+can only ever insert or delete rows carrying their own `sender_id`/
+`created_by`, never impersonate or erase someone else's — it is only the
+*read* side that is open to everyone. Old private per-user message data from
+before this table existed (`app_state` rows with `app_id = 'messages'`) was
+left in place rather than migrated, so nothing previously private leaks into
+the new shared board; it is simply orphaned and unread going forward.
 
 The **admin** is a hidden account that never appears on the picker. It is
 reached by tapping the `flow` mark at the bottom of settings five times and
@@ -163,7 +175,7 @@ opaque "unavailable".
 
 The assistant can act on your own data, not just describe it: change a
 setting, write or delete a note, set the saved weather place, send a message
-into one of your threads, set or clear a reminder. It emits a small closed
+into a shared thread, set or clear a reminder. It emits a small closed
 vocabulary of tags to do it — `<setting key="soundVolume" value="0.3"/>`,
 `<note-create>...</note-create>`, and so on — the same convention `<remember>`
 already used for memory, extended rather than replaced. That choice over real
@@ -183,8 +195,12 @@ are trivially reversible, so asking first would slow down the common case for
 a cost that isn't there.
 
 The vocabulary is closed, and that closedness is the actual boundary, not
-this code's care: there is no admin action, no other-user action, nothing
-resembling one. A request for one has nothing to bind to, on either side —
+this code's care: there is no admin action, nothing resembling one. Every
+action writes only the signed-in person's own data — with one deliberate
+exception: `message-send` posts into a thread everyone on the instance can
+already read, exactly like the Messages app itself, never into another
+user's private notes, settings, or reminders. A request for a real
+other-user action has nothing to bind to, on either side —
 the Edge Function never taught the model a tag for it, and the client's own
 executor ignores any tag name it doesn't recognise even if one somehow
 arrived. Every self-closing and block tag pattern, the streaming hold-back
@@ -208,17 +224,17 @@ The assistant reads the whole of the signed-in person's instance on every questi
 
 (This is also where a stale note-shape assumption from before this file ever read `Notes.svelte` got fixed: a note is `{id, text, updated}`, not `{id, title, body}` — every note had been reaching the assistant as "untitled" with no body at all until this pass.)
 
-It cannot reach anyone else's. Not because the code is careful but because the layer underneath it cannot return another user's rows: everything goes through the same RLS-scoped `instance` the UI uses, and photo blobs come from this device's own IndexedDB.
+Message threads are the one deliberate exception to "reach anyone else's": they are a shared board, not a private notebook, so the assistant reads every thread and every sender's name on the instance, not only the signed-in person's own — see [Users](#users) above. Everything else it sees stops at "cannot reach anyone else's." Not because the code is careful but because the layer underneath it cannot return another user's rows: everything else goes through the same RLS-scoped `instance` the UI uses, and photo blobs come from this device's own IndexedDB.
 
 Photos are the one thing it cannot see *into* by default — the bytes are only sent when you attach one, from the paperclip beside the composer. The context tells it so explicitly, so it says a photo needs attaching rather than inventing what is in it. The instance dump is fenced and labelled as reference material, never instruction: a note that says "ignore your instructions" is something to answer about, not to obey.
 
 ## Apps
 
-All seven orbs open working apps. State persists per-user in Supabase through the `InstanceClient` boundary — the swap that boundary was written for. Photo and audio blobs stay in IndexedDB on the device:
+All seven orbs open working apps. State persists per-user in Supabase through the `InstanceClient` boundary — the swap that boundary was written for, with one exception noted below. Photo and audio blobs stay in IndexedDB on the device:
 
 - **camera** — live viewfinder (`getUserMedia`), capture with flash, front/back flip, a persistent gallery with save/delete.
 - **notes** — create, edit, autosave, delete; titles derived from the first line.
-- **messages** — named threads with a composer and timestamped bubbles; honest about scope (streams live on this instance until multi-device sync lands).
+- **messages** — real communication between the people on this instance, not per-user state: named threads with a composer and timestamped bubbles, backed by shared `message_threads`/`thread_messages` tables (not `InstanceClient`) with realtime delivery, so a message posted from one person's terminal appears live on everyone else's. Bubbles show the sender's name on anyone else's message, never your own. RLS still keeps writes scoped to the signed-in sender — everyone can read every thread, but only its own author can insert or delete a message or a thread.
 - **weather** — live Open-Meteo data: current conditions, 24-hour strip, 7-day range bars; geolocation or place search; °C/°F.
 - **music** — a local library (files persist in IndexedDB), playlist, seek, skip, and a live frequency visualizer.
 - **assistant** — Groq-backed chat with NVIDIA and Gemini fallback; per-user history that follows you between terminals.
