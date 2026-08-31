@@ -191,10 +191,13 @@
 
 /*
   ============================================================
-  Graphics tier 1 — low.
+  Graphics tier 2 — normal.
 
   The contract: identical animations, identical gradients, flat visuals, no
-  idle movement, fewer objects.
+  idle movement, fewer objects. (This was tier 1's contract before graphics
+  tiers were renumbered — "normal" is now what "low" used to mean, because
+  it turned out most people who cared to look at this setting at all wanted
+  the flat, static look rather than the drift.)
 
   So this block never touches a transition or a keyframe the person triggered.
   It removes two things only:
@@ -214,7 +217,13 @@ html[data-gfx='1'] .fl-btn,
 html[data-gfx='1'] .fl-round,
 html[data-gfx='1'] .fl-input,
 html[data-gfx='1'] .fl-textarea,
-html[data-gfx='1'] .sheet {
+html[data-gfx='1'] .sheet,
+html[data-gfx='2'] .fl-glass,
+html[data-gfx='2'] .fl-btn,
+html[data-gfx='2'] .fl-round,
+html[data-gfx='2'] .fl-input,
+html[data-gfx='2'] .fl-textarea,
+html[data-gfx='2'] .sheet {
   box-shadow: none;
 }
 
@@ -223,12 +232,51 @@ html[data-gfx='1'] .sheet {
 html[data-gfx='1'] .orb,
 html[data-gfx='1'] .bk,
 html[data-gfx='1'] .aurora,
-html[data-gfx='1'] .caustics {
+html[data-gfx='1'] .caustics,
+html[data-gfx='2'] .orb,
+html[data-gfx='2'] .bk,
+html[data-gfx='2'] .aurora,
+html[data-gfx='2'] .caustics {
   animation: none !important;
   will-change: auto;
 }
 
-/* Tier 2 keeps the motion but stops paying for permanent layer promotion. */
-html[data-gfx='2'] .bk {
-  will-change: auto;
+/*
+  ============================================================
+  Graphics tier 1 — low.
+
+  Everything tier 2 does, plus the specific things that actually bring a
+  Chromebook-class GPU (or a software compositor) to its knees: a live
+  `backdrop-filter` blur sampled on every element that has one, and the
+  handful of *triggered* animations that were exempted above because a
+  person asked for them — app open/close, an orb's press feedback, a chat
+  bubble arriving — but that were quietly interpolating an expensive
+  property (`border-radius`, `box-shadow`, `filter`) on every frame of
+  their own duration regardless of tier. Tier 2's promise was "the loops
+  go, the motion you triggered doesn't change." Tier 1 breaks that promise
+  on purpose: the motion stays, but the expensive property inside it
+  either doesn't run at all or snaps instead of interpolating. See
+  AppView.svelte, components/Orb.svelte, and apps/assistant/Assistant.svelte
+  for the JS/keyframe half of this — this file only has the parts that are
+  pure CSS.
+  ============================================================
+*/
+html[data-gfx='1'] .fl-glass {
+  /* A live Gaussian blur sampled behind every glass panel is the single
+     most expensive thing this app draws on a weak GPU, and there are many
+     of these on screen at once (list rows, cards, panels). Swap it for the
+     same solid-glass trick Glance.svelte's `.sheet` already uses for large
+     surfaces over a moving background — a more opaque gradient standing in
+     for the blur, rasterised once. */
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  background: linear-gradient(168deg, rgba(255, 255, 255, 0.88), rgba(226, 245, 253, 0.66));
+}
+html[data-gfx='1'] .fl-btn {
+  /* Keep the press-scale feedback (transform, compositor-only); drop the
+     hover brightness filter and the box-shadow transition — box-shadow is
+     already static at this tier, but the property was still listed, so a
+     device that briefly gets a hover event was still paying to interpolate
+     nothing. */
+  transition: transform 0.3s var(--ease-overshoot);
 }

@@ -278,11 +278,13 @@ Settings carries a **three-stage graphics tier**, and the split between the stag
 
 | tier | what changes |
 |---|---|
-| **1 · low** | Same animations, same gradients. No idle movement anywhere, no shadows, far fewer drawn objects. |
-| **2 · normal** | Ambient drift at a reduced object count. |
+| **1 · low** | Everything tier 2 drops, plus the things that actually strain a weak GPU or a software compositor: no live `backdrop-filter` blur (every glass panel falls back to a solid gradient), and the triggered animations that tiers 2 and 3 leave alone — app open/close, an orb's press feedback, a chat bubble's arrival — have their expensive property (`border-radius`, `box-shadow`, `filter`) snap instead of interpolate. Built for a Chromebook or any other integrated-GPU device where those were the actual bottleneck. |
+| **2 · normal** | Same animations, same gradients. No idle movement anywhere, no shadows, far fewer drawn objects. (This was tier 1's job before the tiers were renumbered — it turned out to be what most people wanted by default, so it moved to "normal" and "low" was freed up for hardware that needs more than a flat look removed.) |
 | **3 · full** | Every layer, every drift. |
 
-Transitions are **identical at all three**. A cheap device should still feel like the same system answering you; what it should not do is spend a battery animating things nobody asked to move. So what tier 1 removes is the work that never ends — an idle loop pins a promoted layer and re-composites forever — and never the motion you triggered. Gradients stay untouched at every tier: they rasterise once and are then only moved, so they cost almost nothing, and they are what makes flow look like flow.
+Tiers 2 and 3 keep transitions **identical** to each other on purpose. A cheap device should still feel like the same system answering you; what it should not do is spend a battery animating things nobody asked to move. So what tier 2 removes is the work that never ends — an idle loop pins a promoted layer and re-composites forever — and never the motion you triggered. Gradients stay untouched at both: they rasterise once and are then only moved, so they cost almost nothing, and they are what makes flow look like flow.
+
+Tier 1 is the one tier that changes the motion you triggered, not just the motion nobody asked for — because on the hardware it targets, that triggered motion was where the actual frame drops were. The shape of it is unchanged (an app still grows from the orb you pressed, a chat bubble still fades in); only the expensive property inside it does, dropping from "interpolated across the whole duration" to "applied once."
 
 ## Motion law
 

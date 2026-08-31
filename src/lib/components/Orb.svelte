@@ -158,4 +158,14 @@
       inset 6px 4px 14px rgba(255, 255, 255, 0.3),
       0 6px 14px rgba(13, 63, 143, 0.28);
   }
+
+  /* Tier 1: every orb in the field re-runs this on every hover and every
+     press. Interpolating a six-layer inset+outset box-shadow over 420ms is
+     cheap once; times up to eight orbs, on every single tap, it adds up on
+     a weak GPU. The different shadow per state stays — it just snaps
+     instead of animating, which the transform press-scale above still
+     covers for feel. */
+  :global(html[data-gfx='1']) .orb::before {
+    transition: none;
+  }
 </style>

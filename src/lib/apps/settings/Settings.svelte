@@ -162,8 +162,8 @@
     play('tap');
   }
   const tiers = [
-    { v: 1 as const, name: 'low', hint: 'flat surfaces, nothing drifting. for older hardware.' },
-    { v: 2 as const, name: 'normal', hint: 'ambient drift, fewer objects.' },
+    { v: 1 as const, name: 'low', hint: 'no blur, no drift, instant transitions. for chromebooks and weak GPUs.' },
+    { v: 2 as const, name: 'normal', hint: 'flat surfaces, nothing drifting.' },
     { v: 3 as const, name: 'full', hint: 'every layer, every drift.' }
   ];
   const tier = $derived(tiers.find((t) => t.v === s.graphics) ?? tiers[2]);
