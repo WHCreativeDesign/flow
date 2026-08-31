@@ -23,18 +23,10 @@ export interface FlowUser {
   avatarHue: number;
 }
 
-export interface PickerUser {
-  id: string;
-  displayName: string;
-  username: string;
-  avatarHue: number;
-}
-
 class Auth {
   user = $state<FlowUser | null>(null);
   /** null until the stored token has been checked, so the shell can wait */
   ready = $state(false);
-  users = $state<PickerUser[]>([]);
   error = $state<string | null>(null);
   busy = $state(false);
 
@@ -42,7 +34,6 @@ class Auth {
   adminToken = $state<string | null>(null);
 
   async init() {
-    await this.refreshUsers();
     const token = readToken();
     if (token) {
       const { data } = await supabase().rpc('flow_session', { p_token: token });
@@ -64,17 +55,6 @@ class Auth {
     this.ready = true;
   }
 
-  async refreshUsers() {
-    const { data, error } = await supabase().rpc('flow_list_users');
-    if (error) return;
-    this.users = (data ?? []).map((u: Record<string, unknown>) => ({
-      id: u.id as string,
-      displayName: u.display_name as string,
-      username: u.username as string,
-      avatarHue: (u.avatar_hue as number) ?? 205
-    }));
-  }
-
   async login(username: string, password: string): Promise<boolean> {
     this.busy = true;
     this.error = null;
@@ -89,18 +69,17 @@ class Auth {
       }
       const row = Array.isArray(data) ? data[0] : data;
       if (!row?.token) {
-        this.error = 'wrong password';
+        this.error = 'wrong username or password';
         return false;
       }
       writeToken(row.token);
       resetClient();
-      const picked = this.users.find((u) => u.username === username);
       this.user = {
         id: row.user_id,
         displayName: row.display_name,
         username,
         isAdmin: row.is_admin,
-        avatarHue: picked?.avatarHue ?? 205
+        avatarHue: row.avatar_hue ?? 205
       };
       return true;
     } finally {
@@ -157,7 +136,6 @@ class Auth {
       p_avatar_hue: hue
     });
     if (error) throw new Error(error.message);
-    await this.refreshUsers();
   }
 
   async adminSetPassword(userId: string, password: string) {
@@ -178,7 +156,6 @@ class Auth {
       p_display_name: displayName
     });
     if (error) throw new Error(error.message);
-    await this.refreshUsers();
   }
 
   /* ---- provider key pool (admin) ---- */
@@ -236,7 +213,6 @@ class Auth {
       p_user_id: userId
     });
     if (error) throw new Error(error.message);
-    await this.refreshUsers();
   }
 }
 

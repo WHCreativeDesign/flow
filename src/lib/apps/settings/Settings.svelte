@@ -83,6 +83,7 @@
   const addUser = () =>
     run(async () => {
       if (!newName.trim() || !newPass) throw new Error('name and password are both required');
+      if (newPass.length < 8) throw new Error('password must be at least 8 characters');
       // spread the hues so new users do not all look alike
       await auth.adminCreateUser(newName.trim(), newPass, (adminUsers.length * 63 + 205) % 360);
       newName = '';
@@ -92,6 +93,7 @@
   const changePassword = (id: string) =>
     run(async () => {
       if (!pwValue) throw new Error('a password is required');
+      if (pwValue.length < 8) throw new Error('password must be at least 8 characters');
       await auth.adminSetPassword(id, pwValue);
       pwFor = null;
       pwValue = '';
@@ -376,7 +378,7 @@
           </div>
           {#if pwFor === u.id}
             <div class="line sub">
-              <input class="fl-input" type="password" bind:value={pwValue} placeholder="new password" />
+              <input class="fl-input" type="password" bind:value={pwValue} placeholder="new password (min 8 characters)" />
               <button class="fl-btn primary sm" onclick={() => changePassword(u.id)}>set</button>
             </div>
           {/if}
@@ -384,7 +386,7 @@
 
         <div class="line sub">
           <input class="fl-input" bind:value={newName} placeholder="new user name" />
-          <input class="fl-input" type="password" bind:value={newPass} placeholder="password" />
+          <input class="fl-input" type="password" bind:value={newPass} placeholder="password (min 8 characters)" />
           <button class="fl-btn primary sm" onclick={addUser}>add</button>
         </div>
 

@@ -41,16 +41,24 @@ The glance's daily summary, suggestion chips and ask field are live. The summary
 ## Users
 
 flow is one instance per household, not per person. The terminal opens on a
-picker — **User 1**, **User 2**, whoever else exists — and nothing behind it
-belongs to anyone until someone signs in.
+plain username-and-password form, and nothing behind it belongs to anyone
+until someone signs in. It is a form, not a picker: the instance used to show
+a grid of every account before anyone typed anything, which both exposed who
+has an account here to a glance at the screen and reduced "password" to a
+short numeric passcode entered after a tap. Typing both fields is the
+ordinary shape of signing in anywhere else, and it is what makes a real
+minimum length mean something.
 
 Users are deliberately **not** Supabase Auth. These are people sharing a screen
-in a kitchen, identified by a short password, not by email and a confirmation
+in a kitchen, identified by a username and a password — minimum 8 characters,
+enforced server-side when a password is set — not by email and a confirmation
 link. So flow keeps its own `app_users` table: passwords are bcrypt hashes made
 by `pgcrypto` inside Postgres and never leave it, the browser only ever holds an
 opaque session token, and both credential tables have RLS on with **no policies
 at all** — the publishable key cannot read a single row of either. Every
-credential path goes through a `SECURITY DEFINER` function instead.
+credential path goes through a `SECURITY DEFINER` function instead. Login
+itself compares a password hash even on an unknown username, so a wrong
+username and a wrong password take the same time and cannot be told apart.
 
 Everything a person owns follows them to any terminal they sign in on: notes,
 assistant chat history, the camera gallery index, the music playlist, weather
@@ -71,7 +79,7 @@ before this table existed (`app_state` rows with `app_id = 'messages'`) was
 left in place rather than migrated, so nothing previously private leaks into
 the new shared board; it is simply orphaned and unread going forward.
 
-The **admin** is a hidden account that never appears on the picker. It is
+The **admin** is a hidden account with no sign-in form of its own. It is
 reached by tapping the `flow` mark at the bottom of settings five times and
 entering its password; unlocking it does not change who is signed in — you stay
 yourself and additionally hold an admin token, held in memory only, that dies
