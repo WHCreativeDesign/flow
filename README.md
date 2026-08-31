@@ -261,7 +261,7 @@ Every node a cue creates is torn down when its voice ends — a cue that leaves 
 
 ### Menu music
 
-An optional ambient bed plays on the home pages, in the style of the Wii U menu: a slow detuned drone under a lowpass whose corner breathes on its own LFO, with sparse plucked chimes dropped over it from the same D pentatonic every cue above uses. It is an original generative composition, not a transcription of anyone's actual soundtrack — closer to wind chimes over a held chord than a fixed tune, so there is no melody to recognise.
+An optional ambient bed plays on the home pages, in the style of the Wii U menu: three detuned triangles under a lowpass whose corner breathes on its own LFO, gliding through a slow I–V–vi–IV chord progression in D — D major, A major, B minor, G major, a five-second glide between roughly seventeen-second holds — with sparse plucked chimes dropped over it from the same D pentatonic every cue above uses. That chord skeleton is a common, unownable harmonic pattern, not anyone's melody, so the whole thing is an original generative composition rather than a transcription of any actual soundtrack — closer to wind chimes drifting over a slowly changing chord than a fixed tune, so there is no melody to recognise.
 
 It is **off by default**, unlike every other sound setting here, because background music playing continuously on a shared household terminal is a bigger ask than a UI blip firing once. `settings.musicEnabled` toggles it from the sound panel.
 

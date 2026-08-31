@@ -3,6 +3,7 @@ import { idb } from '../storage/idb';
 import { auth } from '../auth.svelte';
 import { settings } from '../settings.svelte';
 import { supabase } from '../sync/supabase';
+import { fetchForecast, codeOf, type Place } from '../data/weather';
 
 /*
   Everything the assistant is allowed to see.
@@ -130,6 +131,50 @@ async function threadSummary(): Promise<string[]> {
   return out;
 }
 
+/*
+  The saved place's actual forecast, not just its name — a question like "how
+  hot will it get" has nothing to answer from if all the assistant was ever
+  told is which city is saved. Live, same source the Weather app and the
+  glance card use, so the assistant's answer can never disagree with what the
+  person sees on screen.
+*/
+async function weatherSummary(weatherState: Record<string, unknown> | null): Promise<string[]> {
+  const place = weatherState?.place as Place | undefined;
+  if (!place) return ['No place saved. If asked about weather, say a place needs to be set first.'];
+
+  const useF = typeof weatherState?.useF === 'boolean' ? (weatherState.useF as boolean) : false;
+  const unit = useF ? 'F' : 'C';
+  const conv = (c: number) => Math.round(useF ? (c * 9) / 5 + 32 : c);
+
+  try {
+    const wx = await fetchForecast(place);
+    const out = [
+      `Saved place: ${place.name}`,
+      `Right now: ${conv(wx.tempC)}°${unit}, feels like ${conv(wx.feelsC)}°${unit}, ${codeOf(wx.code).label}, wind ${wx.wind} km/h, humidity ${wx.humidity}%.`
+    ];
+    const today = wx.daily[0];
+    if (today) out.push(`Today: high ${conv(today.hiC)}°${unit}, low ${conv(today.loC)}°${unit}, ${codeOf(today.code).label}.`);
+    const upcoming = wx.hourly
+      .slice(1, 7)
+      .map(
+        (h) =>
+          `${new Date(h.time).toLocaleTimeString([], { hour: 'numeric' }).toLowerCase().replace(' ', '')} ${conv(h.tempC)}°${unit} ${codeOf(h.code).label}${h.precip >= 30 ? ` (${h.precip}% precip)` : ''}`
+      );
+    if (upcoming.length) out.push(`Next several hours: ${upcoming.join(', ')}.`);
+    const week = wx.daily
+      .slice(1, 6)
+      .map((d) => `${new Date(d.date).toLocaleDateString([], { weekday: 'short' })} ${conv(d.hiC)}°/${conv(d.loC)}° ${codeOf(d.code).label}`);
+    if (week.length) out.push(`Coming days: ${week.join(', ')}.`);
+    out.push(
+      'This is live data for the saved place only. You have no way to look up weather for anywhere ' +
+        'else — if asked about a different city, say so plainly rather than guessing or inventing numbers.'
+    );
+    return out;
+  } catch {
+    return [`Saved place: ${place.name}`, 'Forecast unavailable right now (offline, or the weather service failed).'];
+  }
+}
+
 async function reminderSummary(): Promise<string[]> {
   if (!auth.user) return ['None.'];
   const { data, error } = await supabase()
@@ -156,13 +201,17 @@ export async function buildContext(): Promise<string> {
     photoSummary(),
     reminderSummary()
   ]);
+  const weatherLines = await weatherSummary(weatherState);
 
   const out: string[] = [];
   const now = new Date();
 
   out.push('=== This terminal ===');
   out.push(`Signed in as: ${auth.user.displayName}`);
-  out.push(`Now: ${now.toISOString()} (${now.toLocaleString()})`);
+  // local time first and unlabelled, because that is what "what time is it"
+  // means; the ISO form is for computing a reminder's "at", never for saying
+  // the time out loud — it reads as UTC and answering with it is wrong.
+  out.push(`Now: ${now.toLocaleString()} (ISO, for scheduling only: ${now.toISOString()})`);
   out.push(`Terminal name: ${settings.current.deviceLabel}`);
 
   /* --- notes --- */
@@ -196,10 +245,9 @@ export async function buildContext(): Promise<string> {
       'If asked about what is in a photo, say it must be attached.'
   );
 
-  /* --- weather --- */
-  const place = weatherState?.place as { name?: string } | undefined;
+  /* --- weather: real forecast, not just the place name --- */
   out.push('', '=== Weather ===');
-  out.push(place?.name ? `Saved place: ${place.name}` : 'No place saved.');
+  out.push(...weatherLines);
 
   /* --- music --- */
   const tracks = (musicState?.tracks as Array<{ name?: string }> | undefined) ?? [];
