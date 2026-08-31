@@ -230,13 +230,14 @@ Photos are the one thing it cannot see *into* by default — the bytes are only 
 
 ## Apps
 
-All seven orbs open working apps. State persists per-user in Supabase through the `InstanceClient` boundary — the swap that boundary was written for, with one exception noted below. Photo and audio blobs stay in IndexedDB on the device:
+All eight orbs open working apps. State persists per-user in Supabase through the `InstanceClient` boundary — the swap that boundary was written for, with one exception noted below. Photo and audio blobs stay in IndexedDB on the device:
 
 - **camera** — live viewfinder (`getUserMedia`), capture with flash, front/back flip, a persistent gallery with save/delete.
 - **notes** — create, edit, autosave, delete; titles derived from the first line.
 - **messages** — real communication between the people on this instance, not per-user state: named threads with a composer and timestamped bubbles, backed by shared `message_threads`/`thread_messages` tables (not `InstanceClient`) with realtime delivery, so a message posted from one person's terminal appears live on everyone else's. Bubbles show the sender's name on anyone else's message, never your own. RLS still keeps writes scoped to the signed-in sender — everyone can read every thread, but only its own author can insert or delete a message or a thread.
 - **weather** — live Open-Meteo data: current conditions, 24-hour strip, 7-day range bars; geolocation or place search; °C/°F.
 - **music** — a local library (files persist in IndexedDB), playlist, seek, skip, and a live frequency visualizer.
+- **flowstore** — a storefront shell over a fixed catalog of placeholder apps and games (`catalog.ts`) — search, category chips, a featured card, and a per-user "get/open" toggle persisted like any other app. It is explicitly a design pass, not a packaging system: getting something marks it installed on the instance, it does not add a working app to the orb field, and the detail pane says so in plain words. The one deliberately two-palette surface in flow — the title reads `flow` in the system's own water gradient and `store` in a separate warm one, and every action carries the split through: getting or removing something is a store-colored action, opening something already installed is flow-blue, so the button's color tells you which kind of action it is before you read it.
 - **assistant** — Groq-backed chat with NVIDIA and Gemini fallback; per-user history that follows you between terminals.
 - **settings** — system sounds and volume, idle timeout, 12/24-hour clock, terminal name; applied instantly and persisted. Also sign-out, an assistant key check, and the hidden admin panel.
 
