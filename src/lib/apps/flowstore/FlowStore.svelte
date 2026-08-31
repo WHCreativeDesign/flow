@@ -13,11 +13,12 @@
     plainly in the detail pane rather than left to look like more than it is.
 
     Two palettes on purpose, because the name is two words: "flow" reads in
-    the system's own water gradient, "store" in a separate warm one — carried
-    through into which actions get which color. Opening something already on
-    the instance is a flow-blue action; getting or removing something is a
-    store action. The color says which kind of button you're looking at
-    before you read it.
+    the system's own water gradient, "store" in a separate warm one. The
+    split lives in the identity chrome — the title, the category chips, the
+    featured card, each item's icon tile — not in the action button itself:
+    "get" is the same flow blue every other primary action in the app uses,
+    so a person never has to learn a second "this is the real button" color
+    just because they're in the store.
   */
 
   let installed = $state<string[]>([]);
@@ -435,23 +436,15 @@
     color: var(--ink-faint);
   }
 
-  /* store-colored primary action — "get" and "remove" are store actions;
-     once installed the same button turns flow-blue, because opening
-     something you already have is a flow action, not a store one */
+  /* "get" is flow-blue, same as any other primary action in the app — the
+     store's own palette lives in the identity chrome (title, chips, hero,
+     icon tiles), not in the button that actually does something. Once
+     installed, "open" drops to the quiet glass treatment: it's no longer
+     asking for a tap, just offering one. */
   .get-btn {
     align-self: stretch;
     justify-content: center;
     color: #fff;
-    text-shadow: 0 1px 2px rgba(139, 30, 90, 0.3);
-    background:
-      radial-gradient(ellipse 70% 50% at 30% 18%, rgba(255, 255, 255, 0.4) 0%, rgba(255, 255, 255, 0) 60%),
-      var(--store-grad);
-    box-shadow:
-      inset 0 1.5px 0 rgba(255, 255, 255, 0.6),
-      inset 0 -8px 14px rgba(139, 30, 90, 0.3),
-      0 8px 18px rgba(139, 30, 90, 0.24);
-  }
-  .get-btn.installed {
     text-shadow: 0 1px 2px rgba(13, 63, 143, 0.3);
     background:
       radial-gradient(ellipse 70% 50% at 30% 18%, rgba(255, 255, 255, 0.55) 0%, rgba(255, 255, 255, 0) 60%),
@@ -460,6 +453,14 @@
       inset 0 1.5px 0 rgba(255, 255, 255, 0.7),
       inset 0 -8px 14px rgba(13, 63, 143, 0.35),
       0 8px 18px rgba(13, 63, 143, 0.24);
+  }
+  .get-btn.installed {
+    color: var(--deep);
+    text-shadow: none;
+    background: linear-gradient(172deg, rgba(255, 255, 255, 0.7), rgba(232, 248, 253, 0.45));
+    box-shadow:
+      inset 0 1.5px 0 rgba(255, 255, 255, 1),
+      0 6px 14px rgba(13, 63, 143, 0.1);
   }
   .get-btn.sm {
     padding: 9px 18px;
