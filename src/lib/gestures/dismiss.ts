@@ -73,6 +73,10 @@ export function dismissGesture(node: HTMLElement, options: DismissOptions) {
   }
 
   function down(e: PointerEvent) {
+    // touch gets a tappable home button instead (see AppView.svelte) — a
+    // hidden swipe-up zone under a visible button reads as a broken tap
+    // target the moment a finger drags rather than taps
+    if (e.pointerType === 'touch') return;
     if (e.pointerType === 'mouse' && e.button !== 0) return;
     if (e.clientY < window.innerHeight - zone()) return;
     active = true;

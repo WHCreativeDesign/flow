@@ -16,11 +16,11 @@ There is no desktop, no windows, no z-index stacking. Any surface running flow i
 |---|---|
 | **idle** | Ambient drift, clock visible. Wakes on any touch or motion. |
 | **home** | Two pages you swipe between: **glance** (clock, notifications, assistant) and **field** (the orbs). |
-| **app** | Edge to edge, zero chrome. One universal edge-swipe-up returns home. |
+| **app** | Edge to edge, zero chrome. A **home** button at the bottom edge returns home. |
 
-Exiting is interactive. On touch the bottom edge is a gesture bar: drag up from it and the app follows your finger, shrinking back toward the orb it came from. Release decides the way a physical object would — by where the gesture is *heading*, not only where it stopped. A fast flick dismisses from an inch up; the same inch dragged slowly settles back. Velocity also sets the duration of the finish. Pointer devices get a **home** key in that same position instead — a drag is a poor gesture with a mouse, so the control changes but its place does not.
+Exiting is a tap, not a gesture. A **home** button sits at the bottom edge of every app — one control, one position, on every device. It used to be a hidden swipe-up bar on touch (drag up and the app followed your finger, released the way a physical object would based on where the gesture was heading) and a button only for a mouse, on the theory that a drag is a poor gesture with a mouse anyway. In practice a hidden gesture is a poor gesture full stop — undiscoverable, and a broken-feeling tap target the moment a finger drags instead of taps — so touch gets the same visible button pointer devices already had. Mouse can still drag-dismiss the same zone under the button, a quieter leftover of the original gesture, but nothing depends on it being discovered.
 
-Every way out collapses. The home key and Escape run the same reverse bloom as the drag — the card shrinks back into the orb it grew from, casting a shadow the whole way down — just on a fixed duration, since a click carries no velocity to read. Nothing in flow cuts.
+Every way out collapses. The home button and Escape run the same reverse bloom the old drag did — the card shrinks back into the orb it grew from, casting a shadow the whole way down — just on a fixed duration, since a click carries no velocity to read. Nothing in flow cuts.
 
 The signature gesture is **press → release → bloom**: an orb compresses under the finger (~0.83, fast ease-in), then expands from its exact origin point to fill the screen. Never slide, never cut, never cross-fade.
 
