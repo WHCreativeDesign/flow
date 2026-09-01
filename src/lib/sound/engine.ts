@@ -1,3 +1,5 @@
+import { haptic } from '../haptics';
+
 /*
   flow sound design — synthesized, no assets.
 
@@ -47,6 +49,26 @@ type CueName =
   | 'reply'
   | 'noted'
   | 'deny';
+
+/* Every sound cue has a matching haptic weight, fired from the same call —
+   one call site for both, so nothing that plays a sound ever forgets to
+   also buzz. `thinking` is deliberately absent: it marks the start of a
+   wait, not a discrete moment worth a pulse. */
+const HAPTIC_FOR: Partial<Record<CueName, Parameters<typeof haptic>[0]>> = {
+  wake: 'medium',
+  press: 'light',
+  open: 'medium',
+  home: 'medium',
+  tap: 'light',
+  page: 'light',
+  toggle: 'light',
+  send: 'light',
+  shutter: 'medium',
+  dismiss: 'light',
+  reply: 'light',
+  noted: 'success',
+  deny: 'error'
+};
 
 let ctx: AudioContext | null = null;
 let master: GainNode | null = null;
@@ -426,6 +448,11 @@ const cues: Record<CueName, (ac: AudioContext, t: number) => void> = {
 };
 
 export function play(name: CueName) {
+  // haptics run independent of the sound mute — a silenced phone still
+  // buzzes, and muting UI sound is not the same request as muting touch
+  const weight = HAPTIC_FOR[name];
+  if (weight) haptic(weight);
+
   if (!enabled) return;
   const ac = ensure();
   if (!ac || !master || !room) return;
