@@ -361,6 +361,10 @@
   let dragNodeOffset = { x: 0, y: 0 };
   let downScreen = { x: 0, y: 0 };
   let downWorld = { x: 0, y: 0 };
+  /** whatever node was actually under the finger at pointerdown — fixed for
+      the whole gesture, so a node that drifts under a physics update mid-tap
+      can't dodge the hit-test the way re-testing at release would let it */
+  let hitNodeId: string | null = null;
   let candidateNodeId: string | null = null;
   let pressedId: string | null = null;
   let panStartView = { x: 0, y: 0 };
@@ -406,6 +410,7 @@
     draggingId = null;
     pressedId = null;
     candidateNodeId = null;
+    hitNodeId = null;
     const pts = [...activePointers.values()];
     const [p1, p2] = pts;
     pinch.startDist = Math.hypot(p2.x - p1.x, p2.y - p1.y) || 1;
@@ -454,12 +459,15 @@
 
     downScreen = p;
     downWorld = toWorld(p.x, p.y);
-    candidateNodeId = linking ? null : hitTest(downWorld.x, downWorld.y);
+    hitNodeId = hitTest(downWorld.x, downWorld.y);
+    candidateNodeId = linking ? null : hitNodeId;
     mode = 'undecided';
-    if (candidateNodeId) {
-      pressedId = candidateNodeId;
-      const n = pos.get(candidateNodeId)!;
-      dragNodeOffset = { x: downWorld.x - n.x, y: downWorld.y - n.y };
+    if (hitNodeId) {
+      pressedId = hitNodeId;
+      if (candidateNodeId) {
+        const n = pos.get(candidateNodeId)!;
+        dragNodeOffset = { x: downWorld.x - n.x, y: downWorld.y - n.y };
+      }
       draw();
     }
   }
@@ -489,6 +497,11 @@
 
     if (mode === 'undecided') {
       if (Math.hypot(dx, dy) < TAP_SLOP) return;
+      // linking mode never drags: a node pressed while linking stays pinned
+      // to that node regardless of how far the finger wanders — physics can
+      // visibly shift a not-yet-settled node under a held finger, and that
+      // drift must never read as "let go of this node and pan instead"
+      if (linking && hitNodeId) return;
       if (candidateNodeId) {
         mode = 'node';
         draggingId = candidateNodeId;
@@ -539,6 +552,7 @@
     mode = 'idle';
     pressedId = null;
     candidateNodeId = null;
+    hitNodeId = null;
     dragging = null;
     draggingId = null;
     if (canvasEl) canvasEl.style.cursor = 'grab';
@@ -547,7 +561,7 @@
 
   function resolveTap() {
     if (linking) {
-      handleLinkTap(hitTest(downWorld.x, downWorld.y));
+      handleLinkTap(hitNodeId);
       return;
     }
     if (candidateNodeId) openNode(candidateNodeId);
