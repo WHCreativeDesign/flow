@@ -300,6 +300,17 @@
     display: flex;
     flex-direction: column;
     gap: 10px;
+    /*
+      `.fl-scroll` sets overflow-y: auto, and per the CSS overflow spec that
+      promotes overflow-x to auto too even though it's never set explicitly —
+      the rows' own `.fl-glass` shadow had no horizontal room to fall into
+      before hitting that boundary, so it got clipped off square at the
+      scroll container's edge instead of fading out. The padding gives the
+      shadow room to fall; the negative margin puts the layout back where
+      it was (same fix Glance.svelte's `.feed` uses for its cards).
+    */
+    padding: 4px 16px;
+    margin: 0 -16px;
   }
   /* the same reading measure the thread uses — a row stretched across a wall
      display puts the delete control a foot from the title it belongs to */
@@ -360,7 +371,10 @@
   /* ---- the conversation ---- */
   .thread {
     flex: 1;
-    padding: 4px 0 10px;
+    /* same shadow-clipping fix as .list above — the user bubble's own
+       box-shadow needs the same horizontal room to fall into */
+    padding: 4px 16px 10px;
+    margin: 0 -16px;
   }
   .turn {
     display: flex;

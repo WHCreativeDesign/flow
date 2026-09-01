@@ -374,7 +374,7 @@
     startMid: { x: 0, y: 0 },
     startViewXY: { x: 0, y: 0 }
   };
-  const TAP_SLOP = 6;
+  const TAP_SLOP = 10;
 
   let linkFrom: string | null = $state(null);
   let pointerScreen: { x: number; y: number } | null = null;
@@ -440,6 +440,30 @@
   }
 
   function onpointerdown(e: PointerEvent) {
+    /*
+      A real device doesn't always deliver a pointerup/pointercancel for
+      every pointerdown it sends — an interrupted gesture (an OS edge
+      swipe, the app losing focus mid-touch, a WebKit quirk) can leave a
+      phantom entry in `activePointers` (and `mode` stuck mid-gesture,
+      never returning to 'idle') forever. From then on, every ordinary
+      single-finger tap or drag looks like a *second* finger joining an
+      already-down one, and gets treated as the start of a pinch instead —
+      which explains taps and drags going consistently unreliable rather
+      than failing outright.
+
+      The browser's own `isPrimary` flag is the fix, and deliberately
+      isn't conditioned on our own `mode`: it is true exactly once per
+      fresh multi-touch sequence, for the first finger down among its
+      kind — a second finger genuinely joining an active gesture is
+      always reported as non-primary. So seeing `isPrimary` true is, on
+      its own, the browser telling us no other pointer of this device
+      can genuinely still be down; whatever state we're holding from
+      before is stale by definition, however mid-gesture it looks.
+    */
+    if (e.isPrimary) {
+      activePointers.clear();
+    }
+
     // capture keeps this pointer's move/up events targeted at the canvas
     // even once a finger wanders outside it mid-gesture — best-effort, since
     // a capture failure (a browser quirk, never expected in practice) must
