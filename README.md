@@ -15,7 +15,7 @@ There is no desktop, no windows, no z-index stacking. Any surface running flow i
 | state | behavior |
 |---|---|
 | **idle** | Ambient drift, clock visible. Wakes on any touch or motion. |
-| **home** | Two pages you swipe between: **glance** (clock, notifications, weather, assistant placeholders) and **field** (the orbs). |
+| **home** | Two pages you swipe between: **glance** (clock, notifications, assistant) and **field** (the orbs). |
 | **app** | Edge to edge, zero chrome. One universal edge-swipe-up returns home. |
 
 Exiting is interactive. On touch the bottom edge is a gesture bar: drag up from it and the app follows your finger, shrinking back toward the orb it came from. Release decides the way a physical object would — by where the gesture is *heading*, not only where it stopped. A fast flick dismisses from an inch up; the same inch dragged slowly settles back. Velocity also sets the duration of the finish. Pointer devices get a **home** key in that same position instead — a drag is a poor gesture with a mouse, so the control changes but its place does not.
@@ -26,17 +26,17 @@ The signature gesture is **press → release → bloom**: an orb compresses unde
 
 ## The home pages
 
-Home is a horizontal pager, and it lays out per device class rather than stretching one design across every screen. On a phone the glance is a single stack; from 900px it becomes a composition — the clock and weather hold a quiet left column while everything that is a *list* sits in a narrow right rail at reading width, denser rather than wider. Between those sizes the stack is capped to a comfortable measure so a tablet-width window never gets full-bleed bars.
+Home is a horizontal pager, and it lays out per device class rather than stretching one design across every screen. On a phone the glance is a single stack; from 900px it becomes a composition — the clock holds a quiet left column while everything that is a *list* sits in a narrow right rail at reading width, denser rather than wider. Between those sizes the stack is capped to a comfortable measure so a tablet-width window never gets full-bleed bars.
 
-Page one is a glance surface — a lock screen in spirit: the clock owns it, with real notifications read out of instance state (the latest message, the most recent note, capture and library counts) and live weather from the shared forecast source. Page two is the orb field.
+Page one is a glance surface — a lock screen in spirit: the clock owns it, with real notifications read out of instance state (due reminders) and the assistant's daily summary. Page two is the orb field.
 
 The page you were on is held in shell state, so opening an app and coming back — or drifting out to idle and waking — returns you to the page you left, never one you did not choose.
 
 Paging uses the same physics as the app dismissal: the surface tracks your finger with resistance at the ends of the run, and the release is decided by where the gesture is heading, not only where it stopped. Pages carry parallax as they move so the motion reads as depth rather than a flat slide.
 
-Notifications can be cleared: **swipe a card away on touch, or use the clear target that appears on hover with a pointer.** A cleared card records what it was *about*, so it stays gone until the underlying thing actually changes — a newer message or another capture brings it back, re-reading the same state does not.
+Notifications can be cleared: **swipe a card away on touch, or use the clear target that appears on hover with a pointer.** A cleared card records what it was *about*, so it stays gone until the underlying thing actually changes — a due reminder firing again does, re-reading the same state does not.
 
-The glance's daily summary, suggestion chips and ask field are live. The summary is generated once a day per user from what is actually on the glance — the weather, what is waiting, the time — and cached on the instance, because the glance re-renders on every clock tick and asking a model each time would burn a free tier before lunch. Chips fill the ask field; asking hands the question to the assistant app, since a lock screen is the wrong place to read three paragraphs. Settings can switch the whole surface off.
+The glance's daily summary, suggestion chips and ask field are live. The summary is generated once a day per user from what is actually on the glance — what is waiting, the time — and cached on the instance, because the glance re-renders on every clock tick and asking a model each time would burn a free tier before lunch. Chips fill the ask field; asking hands the question to the assistant app, since a lock screen is the wrong place to read three paragraphs. Settings can switch the whole surface off.
 
 ## Users
 
@@ -60,24 +60,11 @@ credential path goes through a `SECURITY DEFINER` function instead. Login
 itself compares a password hash even on an unknown username, so a wrong
 username and a wrong password take the same time and cannot be told apart.
 
-Everything a person owns follows them to any terminal they sign in on: notes,
-assistant chat history, the camera gallery index, the music playlist, weather
-places, cleared glance cards, and their settings. One policy shape does the
-work — `user_id = current_user_id()`, where `current_user_id()` resolves the
-`x-flow-token` header against live sessions. A terminal with no session sees
-nothing.
-
-Messages are the one deliberate exception. `message_threads` and
-`thread_messages` are shared, not owner-scoped: anyone signed in on the
-instance can read every thread and every sender's name, because Messages is
-meant as real communication between the people in the house, not a private
-per-user scratchpad. RLS still enforces the boundary that matters — a person
-can only ever insert or delete rows carrying their own `sender_id`/
-`created_by`, never impersonate or erase someone else's — it is only the
-*read* side that is open to everyone. Old private per-user message data from
-before this table existed (`app_state` rows with `app_id = 'messages'`) was
-left in place rather than migrated, so nothing previously private leaks into
-the new shared board; it is simply orphaned and unread going forward.
+Everything a person owns follows them to any terminal they sign in on:
+assistant chat history, their memory graph, cleared glance cards, and their
+settings. One policy shape does the work — `user_id = current_user_id()`,
+where `current_user_id()` resolves the `x-flow-token` header against live
+sessions. A terminal with no session sees nothing.
 
 The **admin** is a hidden account with no sign-in form of its own. It is
 reached by tapping the `flow` mark at the bottom of settings five times and
@@ -155,20 +142,32 @@ the finished reply, so waiting and answered are visibly the same voice.
 
 ## Memory
 
-The assistant can write things down about you between conversations. When you
-state a durable fact — a name, a preference, a routine — it emits a
-`<remember>` tag, which the Edge Function strips out of what you see and writes
-to a per-user `memories` table; later conversations get those facts in their
-system prompt. A tag contract rather than native tool-calling, because that
-works identically across all three providers and would not break the moment the
-fallback fires.
+The assistant can write things down about you between conversations, and you
+can see and edit exactly what it wrote. When you state a durable fact — a
+name, a preference, a routine — it emits a `<remember>` tag, which the Edge
+Function strips out of what you see and writes as a titled markdown node into
+a per-user `memory_nodes` table; later conversations get the most recently
+touched nodes in their system prompt. A tag contract rather than native
+tool-calling, because that works identically across all three providers and
+would not break the moment the fallback fires.
 
 Memory is **shown, not silent**. A reply that stored something says so
-underneath, and the assistant app lists everything it knows about you with a
-delete on each line and a *forget all*. Being remembered without being told is
-the part of assistant memory people object to. Facts are stored one per row
-rather than as a rolling summary precisely so they can be listed and removed
-one at a time.
+underneath, in-line in the chat. The **memory** app is where it actually
+lives: every node is a small markdown document — a title and a body you can
+rewrite by hand — rendered as an Obsidian-style node graph on a hand-rolled
+`<canvas>` force-directed layout (no charting library; flow's only real
+dependency is `@supabase/supabase-js`). Nodes repel each other, an optional
+link between two nodes pulls them toward a rest distance, a weak centering
+force keeps the graph on-screen, and the whole simulation stops redrawing
+once it settles rather than looping forever. Drag a node to reposition it
+(the position persists), tap one to edit its title and body or delete it,
+and toggle **link** in the header to connect two nodes by tapping them in
+turn.
+
+Being remembered without being told is the part of assistant memory people
+object to, which is why it is surfaced twice: once as the quiet toast in
+chat, and permanently as an editable node you can find, correct, or delete
+whenever you want.
 
 Neither provider key is in this repository or in the built bundle, and neither
 can be: flow is a static build on GitHub Pages, so anything it ships is
@@ -182,34 +181,30 @@ opaque "unavailable".
 ## Actions
 
 The assistant can act on your own data, not just describe it: change a
-setting, write or delete a note, set the saved weather place, send a message
-into a shared thread, set or clear a reminder. It emits a small closed
-vocabulary of tags to do it — `<setting key="soundVolume" value="0.3"/>`,
-`<note-create>...</note-create>`, and so on — the same convention `<remember>`
-already used for memory, extended rather than replaced. That choice over real
-provider tool-calling is deliberate: a fixed vocabulary behaves identically
-across Groq, NVIDIA and Gemini and survives the fallback chain exactly like
-`<remember>` does, where three different `tools`/`tool_calls` implementations
-would not.
+setting, or set or clear a reminder. It emits a small closed vocabulary of
+tags to do it — `<setting key="soundVolume" value="0.3"/>`,
+`<reminder-create at="...">...</reminder-create>`, and so on — the same
+convention `<remember>` already used for memory, extended rather than
+replaced. That choice over real provider tool-calling is deliberate: a fixed
+vocabulary behaves identically across Groq, NVIDIA and Gemini and survives
+the fallback chain exactly like `<remember>` does, where three different
+`tools`/`tool_calls` implementations would not.
 
 The Edge Function's only job with an action tag is to recognise it, strip it
 from what you see, and hand it to the client as structured data. Every action
 actually **executes in the browser**, through the exact same
-`settings.update()` / `instance.setAppState()` / `supabase()` calls the real
-UI already uses — nothing here has more reach than a person tapping a switch
-already has, because it *is* that same call. Actions auto-execute and report
-what happened afterward, the same trust model memory uses: settings and notes
-are trivially reversible, so asking first would slow down the common case for
-a cost that isn't there.
+`settings.update()` / `supabase()` calls the real UI already uses — nothing
+here has more reach than a person tapping a switch already has, because it
+*is* that same call. Actions auto-execute and report what happened
+afterward, the same trust model memory uses: a setting is trivially
+reversible, so asking first would slow down the common case for a cost that
+isn't there.
 
 The vocabulary is closed, and that closedness is the actual boundary, not
-this code's care: there is no admin action, nothing resembling one. Every
-action writes only the signed-in person's own data — with one deliberate
-exception: `message-send` posts into a thread everyone on the instance can
-already read, exactly like the Messages app itself, never into another
-user's private notes, settings, or reminders. A request for a real
-other-user action has nothing to bind to, on either side —
-the Edge Function never taught the model a tag for it, and the client's own
+this code's care: there is no admin action, nothing resembling one, and no
+action ever writes anything but the signed-in person's own data. A request
+for a real other-user action has nothing to bind to, on either side — the
+Edge Function never taught the model a tag for it, and the client's own
 executor ignores any tag name it doesn't recognise even if one somehow
 arrived. Every self-closing and block tag pattern, the streaming hold-back
 that keeps raw markup off the screen mid-reply, and the whitespace left
@@ -217,41 +212,55 @@ behind when two tags sit on one line are covered by a standalone test file
 run before each deploy — this is exactly the kind of regex surface a
 plausible-looking fix can quietly break.
 
-**Reminders** are the one genuinely new capability — nothing before this
-could do it. A `reminder-create` tag needs an absolute ISO-8601 timestamp,
-computed by the model itself from the "Now" line already in its context,
-because there is no other way to ground "in 20 minutes" in a stateless
-request. A due reminder surfaces on the glance exactly like any other
-notification card, through the same `collect()`/`clearNote()` mechanism notes
-and messages already use — no separate "fired" flag, because a reminder's own
+**`reminder-create`** needs an absolute ISO-8601 timestamp, computed by the
+model itself from the "Now" line already in its context, because there is no
+other way to ground "in 20 minutes" in a stateless request. A due reminder surfaces on the glance as a notification
+card, dismissed through the same `collect()`/`clearNote()` mechanism the
+glance uses generally — no separate "fired" flag, because a reminder's own
 id as its signature already means a dismissed one never comes back.
 
 ## What the assistant can see
 
-The assistant reads the whole of the signed-in person's instance on every question: notes, message threads, the music library, the saved weather place, settings, reminders, the terminal name, and how many photos exist and when they were taken. Not a cached digest — assembled fresh, because the point is that it knows what is true now. Notes and message threads carry their real id in the listing, which is what lets an action reference an existing one exactly rather than needing to invent one.
+The assistant reads the signed-in person's own reminders and settings on
+every question, plus the memory graph's most recently touched nodes (see
+[Memory](#memory) above). Not a cached digest — assembled fresh, because the
+point is that it knows what is true now. Reminders carry their real id in
+the listing, which is what lets a `reminder-delete` action reference an
+existing one exactly rather than needing to invent one.
 
-(This is also where a stale note-shape assumption from before this file ever read `Notes.svelte` got fixed: a note is `{id, text, updated}`, not `{id, title, body}` — every note had been reaching the assistant as "untitled" with no body at all until this pass.)
+Everything it sees stops at "cannot reach anyone else's." Not because the
+code is careful but because the layer underneath it cannot return another
+user's rows — reminders and settings go through the same RLS-scoped client
+the UI uses.
 
-Message threads are the one deliberate exception to "reach anyone else's": they are a shared board, not a private notebook, so the assistant reads every thread and every sender's name on the instance, not only the signed-in person's own — see [Users](#users) above. Everything else it sees stops at "cannot reach anyone else's." Not because the code is careful but because the layer underneath it cannot return another user's rows: everything else goes through the same RLS-scoped `instance` the UI uses, and photo blobs come from this device's own IndexedDB.
-
-Photos are the one thing it cannot see *into* by default — the bytes are only sent when you attach one, from the paperclip beside the composer. The context tells it so explicitly, so it says a photo needs attaching rather than inventing what is in it. The instance dump is fenced and labelled as reference material, never instruction: a note that says "ignore your instructions" is something to answer about, not to obey.
+Photos are the one thing it cannot see *into* by default — the bytes are
+only sent when you attach one, from chat's composer or from quick info. The
+context tells it so explicitly, so it says a photo needs attaching rather
+than inventing what is in it. The instance dump is fenced and labelled as
+reference material, never instruction: a note that says "ignore your
+instructions" is something to answer about, not to obey.
 
 ## Apps
 
-All eight orbs open working apps. State persists per-user in Supabase through the `InstanceClient` boundary — the swap that boundary was written for, with one exception noted below. Photo and audio blobs stay in IndexedDB on the device:
+The orb field is deliberately narrow: four apps, all built around the
+assistant. State persists per-user in Supabase through the `InstanceClient`
+boundary or directly via RLS-scoped tables, depending on the app:
 
-- **camera** — live viewfinder (`getUserMedia`), capture with flash, front/back flip, a persistent gallery with save/delete.
-- **notes** — create, edit, autosave, delete; titles derived from the first line.
-- **messages** — real communication between the people on this instance, not per-user state: named threads with a composer and timestamped bubbles, backed by shared `message_threads`/`thread_messages` tables (not `InstanceClient`) with realtime delivery, so a message posted from one person's terminal appears live on everyone else's. Bubbles show the sender's name on anyone else's message, never your own. RLS still keeps writes scoped to the signed-in sender — everyone can read every thread, but only its own author can insert or delete a message or a thread.
-- **weather** — live Open-Meteo data: current conditions, 24-hour strip, 7-day range bars; geolocation or place search; °C/°F.
-- **music** — a local library (files persist in IndexedDB), playlist, seek, skip, and a live frequency visualizer.
-- **flowstore** — a storefront shell over a fixed catalog of placeholder apps and games (`catalog.ts`) — search, category chips, a featured card, and a per-user "get/open" toggle persisted like any other app. It is explicitly a design pass, not a packaging system: getting something marks it installed on the instance, it does not add a working app to the orb field, and the detail pane says so in plain words. The one deliberately two-palette surface in flow — the title reads `flow` in the system's own water gradient and `store` in a separate warm one, and every action carries the split through: getting or removing something is a store-colored action, opening something already installed is flow-blue, so the button's color tells you which kind of action it is before you read it.
-- **assistant** — Groq-backed chat with NVIDIA and Gemini fallback; per-user history that follows you between terminals.
-- **settings** — system sounds and volume, idle timeout, 12/24-hour clock, terminal name; applied instantly and persisted. Also sign-out, an assistant key check, and the hidden admin panel.
+- **flow** (chat) — Groq-backed chat with NVIDIA and Gemini fallback; per-user history that follows you between terminals. See [The assistant](#the-assistant).
+- **memory** — the node-graph viewer/editor described in [Memory](#memory) above: every fact the assistant has kept is a markdown node you can drag, edit, link, or delete on a hand-rolled canvas graph.
+- **quick info** — the fast lane into memory. A line of text and/or a photo, no chat and no history, goes straight to the assistant, which turns it into one markdown memory node and hands back a short confirmation rather than a conversation. Voice capture is deliberately not here yet — nothing in the repo does audio input, so this ships text and image first, with an easy path to add a `MediaRecorder` step later without changing the shape of what gets sent.
+- **settings** — system sounds and volume, an optional ambient menu-music bed, idle timeout, 12/24-hour clock, terminal name, the assistant-on-glance toggle, and the three-stage graphics tier (see [Performance contract](#performance-contract)); applied instantly and persisted. Also sign-out, an assistant provider-key check, and the hidden admin panel.
+
+An earlier version of flow carried camera, notes, messages, weather, music,
+and a flowstore shell as separate orbs. They were cut to focus the instance
+on the assistant and its memory rather than removed piecemeal: their
+component files, Supabase tables, and IndexedDB stores are still on disk,
+untouched and unreferenced by the app — nothing was deleted, they are simply
+no longer part of the running system.
 
 ## Inside an app
 
-Apps have their own navigation — notes to one note, chats to one conversation, gallery to one photo — and those pages tween rather than cut, through one shared `Pane`. Both panes are mounted during the change so the outgoing one can actually leave. Depth sets the direction: going deeper, the new pane rises from behind and the old recedes; coming back, exactly reversed, which is what makes back read as back rather than as another forward.
+Apps have their own navigation — the chat list to one conversation, for instance — and those pages tween rather than cut, through one shared `Pane`. Both panes are mounted during the change so the outgoing one can actually leave. Depth sets the direction: going deeper, the new pane rises from behind and the old recedes; coming back, exactly reversed, which is what makes back read as back rather than as another forward.
 
 ## Sound
 
@@ -340,4 +349,4 @@ Visual source of truth: the brand prototype `flow-brand-v2.html` (kept outside t
 - [ ] 7. Multi-device: Realtime shared state, adaptive rendering per device class
 - [ ] 8. Pi migration: `LocalInstanceClient`, mDNS `flow.local`, tunnel for off-network
 - [ ] 9. Offline transports: Bluetooth → audio → QR burst
-- [x] 10. Apps — camera, notes, messages, weather, music, settings all functional on local state
+- [x] 10. Apps — chat, memory graph, quick info, settings all functional on local state

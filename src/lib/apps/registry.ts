@@ -1,12 +1,8 @@
 import type { Component } from 'svelte';
-import Camera from './camera/Camera.svelte';
-import Notes from './notes/Notes.svelte';
-import Messages from './messages/Messages.svelte';
-import Weather from './weather/Weather.svelte';
-import Music from './music/Music.svelte';
-import Settings from './settings/Settings.svelte';
 import Assistant from './assistant/Assistant.svelte';
-import FlowStore from './flowstore/FlowStore.svelte';
+import Memory from './memory/Memory.svelte';
+import QuickInfo from './quickinfo/QuickInfo.svelte';
+import Settings from './settings/Settings.svelte';
 
 /*
   The app registry. Icons are stroke paths on a 24×24 viewBox so the same
@@ -22,46 +18,22 @@ export interface FlowApp {
 
 export const apps: FlowApp[] = [
   {
-    id: 'camera',
-    label: 'camera',
-    icon: '<path d="M4 8h3l1.5-2h7L17 8h3a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z"/><circle cx="12" cy="13" r="3.4"/>',
-    component: Camera
-  },
-  {
-    id: 'notes',
-    label: 'notes',
-    icon: '<path d="M6 4h9l4 4v12a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1z"/><path d="M15 4v4h4M8.5 12h7M8.5 16h4.5"/>',
-    component: Notes
-  },
-  {
-    id: 'messages',
-    label: 'messages',
-    icon: '<path d="M4 5h16a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H9.5L5 20v-4H4a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1z"/><path d="M8 9.5h8M8 12.5h5"/>',
-    component: Messages
-  },
-  {
-    id: 'weather',
-    label: 'weather',
-    icon: '<circle cx="8.5" cy="8" r="3.2"/><path d="M14 18a4 4 0 0 0 0-8 5.5 5.5 0 0 0-10.3 1.6A3.6 3.6 0 0 0 5 18h9z"/>',
-    component: Weather
-  },
-  {
-    id: 'music',
-    label: 'music',
-    icon: '<path d="M9 17V5.5l11-2V15"/><ellipse cx="6" cy="17.5" rx="3" ry="2.6"/><ellipse cx="17" cy="15.5" rx="3" ry="2.6"/>',
-    component: Music
-  },
-  {
     id: 'assistant',
     label: 'flow',
     icon: '<path d="M12 3.6a8.4 8.4 0 0 0-7.2 12.8L3.6 20.4l4-1.2A8.4 8.4 0 1 0 12 3.6z"/><path d="M9 11h6M9 14h3.5"/>',
     component: Assistant
   },
   {
-    id: 'flowstore',
-    label: 'store',
-    icon: '<path d="M6 8h12l1 12a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1L6 8z"/><path d="M9 8V6a3 3 0 0 1 6 0v2"/>',
-    component: FlowStore
+    id: 'memory',
+    label: 'memory',
+    icon: '<circle cx="6" cy="7" r="2.2"/><circle cx="18" cy="7" r="2.2"/><circle cx="12" cy="17" r="2.6"/><path d="M7.8 8.5 10.2 15M16.2 8.5 13.8 15M8.2 7h7.6"/>',
+    component: Memory
+  },
+  {
+    id: 'quickinfo',
+    label: 'quick info',
+    icon: '<path d="M13 3 5 13.5h5.5L10 21l8-11h-5.5L13 3z"/>',
+    component: QuickInfo
   },
   {
     id: 'settings',

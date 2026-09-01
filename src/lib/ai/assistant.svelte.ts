@@ -44,12 +44,6 @@ export interface Attachment {
   name: string;
 }
 
-export interface Memory {
-  id: string;
-  content: string;
-  createdAt: string;
-}
-
 class Assistant {
   chats = $state<ChatSummary[]>([]);
   openId = $state<string | null>(null);
@@ -57,37 +51,11 @@ class Assistant {
   thinking = $state(false);
   /** what the assistant just wrote down about you, shown once under the reply */
   justRemembered = $state<string[]>([]);
-  /** what the assistant just did — settings/notes/weather/messages/reminders */
+  /** what the assistant just did — settings/reminders */
   justDid = $state<string[]>([]);
-  memories = $state<Memory[]>([]);
   /* Provider failures are shown, not swallowed. A generic "unavailable" tells
      you nothing about whether the key, the model or the quota is the problem. */
   error = $state<string | null>(null);
-
-  async loadMemories() {
-    if (!auth.user) return;
-    const { data, error } = await supabase()
-      .from('memories')
-      .select('id, content, created_at')
-      .order('created_at', { ascending: false });
-    if (error) return;
-    this.memories = (data ?? []).map((m) => ({
-      id: m.id as string,
-      content: m.content as string,
-      createdAt: m.created_at as string
-    }));
-  }
-
-  async forget(id: string) {
-    await supabase().from('memories').delete().eq('id', id);
-    this.memories = this.memories.filter((m) => m.id !== id);
-  }
-
-  async forgetAll() {
-    if (!auth.user) return;
-    await supabase().from('memories').delete().eq('user_id', auth.user.id);
-    this.memories = [];
-  }
 
   async loadChats() {
     if (!auth.user) return;
@@ -368,7 +336,6 @@ class Assistant {
         // a second, quieter cue so writing something down is audible as its
         // own event rather than folded into the answer
         setTimeout(() => play('noted'), 260);
-        void this.loadMemories();
       }
 
       /*
@@ -427,7 +394,6 @@ class Assistant {
     this.openId = null;
     this.messages = [];
     this.error = null;
-    this.memories = [];
     this.justRemembered = [];
     this.justDid = [];
     this.clearAttached();

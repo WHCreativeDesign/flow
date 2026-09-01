@@ -52,18 +52,15 @@ async function call(mode: 'summary' | 'suggest', context: string): Promise<strin
 /** What the model is told about the day. Only real state — never invented. */
 function contextFrom(notes: Note[], name: string): string {
   const now = new Date();
-  const weather = notes.find((n) => n.kind === 'weather');
-  const rest = notes.filter((n) => n.kind !== 'weather');
 
   const lines = [
     `Person: ${name}`,
     `Local time: ${now.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`,
     `Date: ${now.toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric' })}`
   ];
-  if (weather) lines.push(`Weather: ${weather.title} — ${weather.body}`);
-  if (rest.length) {
+  if (notes.length) {
     lines.push('Waiting on this instance:');
-    for (const n of rest.slice(0, 6)) lines.push(`- ${n.title}: ${n.body}`);
+    for (const n of notes.slice(0, 6)) lines.push(`- ${n.title}: ${n.body}`);
   } else {
     lines.push('Nothing is waiting on this instance.');
   }

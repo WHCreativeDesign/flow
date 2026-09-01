@@ -9,6 +9,7 @@
   import { auth } from './lib/auth.svelte';
   import { clearInstanceCache } from './lib/sync';
   import { assistant } from './lib/ai/assistant.svelte';
+  import { memoryStore } from './lib/ai/memory.svelte';
   import { glanceAI } from './lib/ai/glance.svelte';
   import { startMenuMusic, stopMenuMusic } from './lib/sound/engine';
   import { deferredPause } from './lib/deferredPause.svelte';
@@ -63,6 +64,7 @@
     lastUser = id;
     clearInstanceCache();
     assistant.reset();
+    memoryStore.reset();
     glanceAI.reset();
     shell.reset();
     if (id) void settings.pull();
