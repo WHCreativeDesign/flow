@@ -42,15 +42,17 @@
     <span class="pill time">{time}</span>
   </div>
 
-  <header class="greet">
-    <div class="mark" aria-hidden="true">flow</div>
-    <div class="hello">{greeting}</div>
-  </header>
+  <div class="body">
+    <header class="greet">
+      <div class="mark" aria-hidden="true">flow</div>
+      <div class="hello">{greeting}</div>
+    </header>
 
-  <div class="field">
-    {#each apps as app, i (app.id)}
-      <Orb {app} index={i} {onopen} />
-    {/each}
+    <div class="field">
+      {#each apps as app, i (app.id)}
+        <Orb {app} index={i} {onopen} />
+      {/each}
+    </div>
   </div>
 </div>
 
@@ -71,6 +73,38 @@
     justify-content: space-between;
     align-items: center;
     flex: none;
+  }
+
+  /*
+    Chromebooks (and any windowed, non-fullscreen browser) routinely give
+    this page a short viewport — a few hundred px tall, nothing like a phone
+    held upright. The old layout centered the greeting and the orb grid with
+    `margin: auto`, which only works when there is slack to distribute: with
+    a negative deficit instead, every auto margin resolves to 0 at once, so
+    the greeting and the first row of orbs ended up touching with no gap at
+    all, glow bleeding straight over the text above it.
+
+    The status pills stay pinned to the top edge no matter what — they are
+    not part of this group. `.body` takes the remaining space below them and
+    centers the greeting + grid within *that*: `justify-content: safe center`
+    still centers when there is room, but falls back to top-alignment
+    instead of centering into overflow when there is not, and `min-height: 0`
+    plus its own scroll lets it actually shrink inside the flex column
+    instead of forcing the whole page taller than the viewport. `gap`
+    replaces the old per-child auto margins so there is always a real,
+    guaranteed minimum space between the greeting and the grid, not a
+    theoretical one that can collapse to zero.
+  */
+  .body {
+    flex: 1;
+    min-height: 0;
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: safe center;
+    gap: clamp(10px, 2.5vh, 28px);
+    overflow-y: auto;
   }
   .pill {
     display: inline-flex;
@@ -94,8 +128,6 @@
   .greet {
     flex: none;
     text-align: center;
-    margin: auto 0 0;
-    padding-top: 12px;
     transform: scale(calc(1 - var(--away) * 0.05));
   }
   .mark {
@@ -117,13 +149,20 @@
     color: var(--ink-soft);
   }
 
+  /*
+    Orb size used to be capped by width alone (up to 148px, however tall the
+    viewport was), so three rows of them could ask for more height than a
+    short window has regardless of what the greeting above did. Capping the
+    column size with a `vh`-based `min()` too means the whole grid shrinks
+    on a short viewport instead of just running out of room — a Chromebook
+    browser window gets smaller orbs, not an overlapping or cut-off screen.
+  */
   .field {
     display: grid;
-    grid-template-columns: repeat(3, minmax(84px, 148px));
-    gap: clamp(20px, 4.5vh, 34px) clamp(18px, 4vw, 30px);
+    grid-template-columns: repeat(3, minmax(64px, min(148px, 16vh)));
+    gap: clamp(10px, 3.5vh, 34px) clamp(14px, 4vw, 30px);
     width: min(600px, 100%);
     justify-content: center;
-    margin: auto 0;
-    padding-bottom: 4vh;
+    flex: none;
   }
 </style>
