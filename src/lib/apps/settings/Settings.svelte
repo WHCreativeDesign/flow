@@ -331,7 +331,7 @@
         <span class="line-label">{auth.user?.displayName ?? '—'}</span>
         <button class="fl-btn quiet" onclick={() => { play('home'); void auth.logout(); }}>sign out</button>
       </div>
-      <p class="fine">your notes, chats, messages and settings follow this account to any terminal.</p>
+      <p class="fine">your chats, memory and settings follow this account to any terminal.</p>
     </section>
 
     <section class="fl-glass panel">

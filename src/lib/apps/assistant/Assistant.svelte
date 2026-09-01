@@ -4,7 +4,7 @@
   import Orb from '../../ai/Orb.svelte';
   import { play } from '../../sound/engine';
   import Pane from '../../components/Pane.svelte';
-  import { listPhotoKeys, photoBlob, encodeImage } from '../../ai/context';
+  import { encodeImage } from '../../ai/context';
 
   /*
     The assistant.
@@ -23,35 +23,17 @@
   let draft = $state('');
   let scroller: HTMLDivElement | undefined = $state();
   let composer: HTMLTextAreaElement | undefined = $state();
-  let showMemories = $state(false);
   let pinned = true;
-  let photoKeys = $state<string[]>([]);
   let picking = $state(false);
   let fileInput: HTMLInputElement | undefined = $state();
 
-  $effect(() => {
-    void listPhotoKeys().then((k) => (photoKeys = k));
-  });
-
-  function photoLabel(key: string) {
-    const n = Number(key);
-    return Number.isFinite(n)
-      ? new Date(n).toLocaleDateString([], { month: 'short', day: 'numeric' })
-      : 'photo';
-  }
-
-  /* Both sources end in the same place: an object URL for the preview and the
-     base64 the provider gets, built from the same bytes so the thumbnail
-     cannot misrepresent what was actually sent. */
+  /* The object URL is for the preview and the base64 is what the provider
+     gets, built from the same bytes so the thumbnail cannot misrepresent
+     what was actually sent. */
   async function attachBlob(id: string, blob: Blob, name: string) {
     const { data, mime } = await encodeImage(blob);
     assistant.attach({ id, url: URL.createObjectURL(blob), data, mime, name });
     play('toggle');
-  }
-
-  async function attachFromGallery(key: string) {
-    const blob = await photoBlob(key);
-    if (blob) await attachBlob(`cam:${key}`, blob, photoLabel(key));
   }
 
   async function attachFromComputer(e: Event) {
@@ -67,7 +49,6 @@
 
   $effect(() => {
     void assistant.loadChats();
-    void assistant.loadMemories();
   });
 
   /* Follow the conversation only while the reader is already at the bottom.
@@ -130,37 +111,14 @@
         <h2 class="fl-app-title">flow</h2>
         <p class="fl-app-sub">
           {assistant.chats.length} conversation{assistant.chats.length === 1 ? '' : 's'}
-          {#if assistant.memories.length}· {assistant.memories.length} remembered{/if}
         </p>
       </div>
       <div class="head-actions">
-        {#if assistant.memories.length}
-          <button class="fl-btn quiet" onclick={() => { showMemories = !showMemories; play('tap'); }}>
-            memory
-          </button>
-        {/if}
         <button class="fl-btn primary" onclick={() => { play('tap'); void assistant.newChat(); }}>
           new chat
         </button>
       </div>
     </div>
-
-    {#if showMemories}
-      <div class="memories fl-glass">
-        <div class="mem-head">
-          <span>what flow remembers about you</span>
-          <button class="fl-btn quiet sm" onclick={() => { play('deny'); void assistant.forgetAll(); }}>
-            forget all
-          </button>
-        </div>
-        {#each assistant.memories as m (m.id)}
-          <div class="mem">
-            <span>{m.content}</span>
-            <button class="x" aria-label="forget this" onclick={() => { play('toggle'); void assistant.forget(m.id); }}>×</button>
-          </div>
-        {/each}
-      </div>
-    {/if}
 
     <div class="fl-scroll list">
       {#if assistant.chats.length === 0}
@@ -267,14 +225,6 @@
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 16V4M7 9l5-5 5 5M4 17v2a1 1 0 001 1h14a1 1 0 001-1v-2" /></svg>
             <span>add from computer</span>
           </button>
-          {#each photoKeys.slice(0, 12) as k (k)}
-            <button class="pk shot" onclick={() => attachFromGallery(k)} aria-label={`attach photo from ${photoLabel(k)}`}>
-              <span class="pk-date">{photoLabel(k)}</span>
-            </button>
-          {/each}
-          {#if !photoKeys.length}
-            <span class="pk-empty">no photos on this device yet</span>
-          {/if}
         </div>
       {/if}
 
@@ -301,16 +251,14 @@
       {/if}
 
       <div class="composer measure">
-        {#if photoKeys.length}
-          <button
-            class="clip"
-            class:on={picking}
-            onclick={() => { picking = !picking; play('tap'); }}
-            aria-label="attach a photo"
-          >
-            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 12.5l5.5-5.5a3 3 0 014.2 4.2l-7.4 7.4a5 5 0 01-7-7l7.4-7.4" /></svg>
-          </button>
-        {/if}
+        <button
+          class="clip"
+          class:on={picking}
+          onclick={() => { picking = !picking; play('tap'); }}
+          aria-label="attach a photo"
+        >
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 12.5l5.5-5.5a3 3 0 014.2 4.2l-7.4 7.4a5 5 0 01-7-7l7.4-7.4" /></svg>
+        </button>
         <textarea
           bind:this={composer}
           bind:value={draft}
@@ -407,52 +355,6 @@
   }
   .del:hover {
     color: #b4225a;
-  }
-
-  .memories {
-    border-radius: 16px;
-    padding: 14px 16px;
-    margin-bottom: 10px;
-    font-family: var(--font-body);
-    color: var(--deep);
-  }
-  .mem-head {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 10px;
-    font-size: 11px;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
-    opacity: 0.6;
-    margin-bottom: 8px;
-  }
-  .mem {
-    display: flex;
-    align-items: flex-start;
-    gap: 8px;
-    padding: 5px 0;
-    font-size: 13px;
-    line-height: 1.4;
-  }
-  .mem span {
-    flex: 1;
-  }
-  .x {
-    background: none;
-    border: none;
-    cursor: pointer;
-    font-size: 17px;
-    line-height: 1;
-    color: var(--deep);
-    opacity: 0.45;
-  }
-  .x:hover {
-    opacity: 1;
-  }
-  .sm {
-    padding: 4px 10px;
-    font-size: 10px;
   }
 
   /* ---- the conversation ---- */
@@ -593,14 +495,6 @@
     stroke-linecap: round;
     stroke-linejoin: round;
   }
-  .pk-empty {
-    font-family: var(--font-body);
-    font-size: 11.5px;
-    color: var(--deep);
-    opacity: 0.5;
-    align-self: center;
-  }
-
   .thumbs {
     display: flex;
     flex-wrap: wrap;

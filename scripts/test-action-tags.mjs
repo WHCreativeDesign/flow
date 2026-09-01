@@ -9,10 +9,6 @@
 const ACTION_TAGS = {
   remember: 'block',
   setting: 'self',
-  'note-create': 'block',
-  'note-delete': 'self',
-  'weather-set': 'self',
-  'message-send': 'block',
   'reminder-create': 'block',
   'reminder-delete': 'self'
 };
@@ -99,12 +95,17 @@ function check(label, actual, expected) {
   ]);
 }
 
-// 2. note-create block with multi-line content, no attrs
+// 2. reminder-create block with multi-line content
 {
-  const input = 'Saved.\n<note-create>Grocery list\nmilk, eggs, bread</note-create>';
+  const input =
+    'Saved.\n<reminder-create at="2026-09-01T09:00:00.000Z">water the plants\nand check the mail</reminder-create>';
   const { clean, actions } = extractActions(extractMemories(input).clean);
-  check('note-create clean', clean, 'Saved.');
-  check('note-create content preserved with newline', actions[0].content, 'Grocery list\nmilk, eggs, bread');
+  check('reminder-create clean', clean, 'Saved.');
+  check(
+    'reminder-create content preserved with newline',
+    actions[0].content,
+    'water the plants\nand check the mail'
+  );
 }
 
 // 3. reminder-create with an attr AND block content together
@@ -138,13 +139,11 @@ function check(label, actual, expected) {
 
 // 6. two actions of different kinds in one reply
 {
-  const input =
-    '<note-delete id="abc-123"/> and <message-send thread="Groceries">pick up milk</message-send> done';
+  const input = '<setting key="use24hClock" value="true"/> and <reminder-delete id="abc-123"/> done';
   const { actions, clean } = extractActions(extractMemories(input).clean);
   check('two actions found', actions.length, 2);
-  check('note-delete id', actions[0].attrs.id, 'abc-123');
-  check('message-send thread attr', actions[1].attrs.thread, 'Groceries');
-  check('message-send content', actions[1].content, 'pick up milk');
+  check('setting attrs', actions[0].attrs, { key: 'use24hClock', value: 'true' });
+  check('reminder-delete id', actions[1].attrs.id, 'abc-123');
   check('surrounding prose kept', clean, 'and done');
 }
 

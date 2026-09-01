@@ -4,7 +4,6 @@
   import { glanceAI } from '../../ai/glance.svelte';
   import { assistant } from '../../ai/assistant.svelte';
   import Orb from '../../ai/Orb.svelte';
-  import { GLYPHS } from '../../data/weather';
   import { play } from '../../sound/engine';
   import { swipeAway } from '../../gestures/swipeAway';
 
@@ -89,8 +88,7 @@
     );
     onopen('assistant', rect);
   }
-  const weather = $derived(notes.find((n) => n.kind === 'weather') ?? null);
-  const feed = $derived(notes.filter((n) => n.kind !== 'weather'));
+  const feed = $derived(notes);
 
   /* A cleared card animates out on its own before it leaves the list, so the
      list closes up behind it instead of snapping shut underneath it. */
@@ -115,11 +113,6 @@
   $effect(() => () => exitTimers.forEach(clearTimeout));
 
   const ICONS: Record<Note['kind'], string> = {
-    weather: '',
-    notes: '<path d="M6 4h9l4 4v12a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1z"/><path d="M15 4v4h4M8.5 12h7M8.5 16h4.5"/>',
-    messages: '<path d="M4 5h16a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H9.5L5 20v-4H4a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1z"/><path d="M8 9.5h8M8 12.5h5"/>',
-    camera: '<path d="M4 8h3l1.5-2h7L17 8h3a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z"/><circle cx="12" cy="13" r="3.4"/>',
-    music: '<path d="M9 17V5.5l11-2V15"/><ellipse cx="6" cy="17.5" rx="3" ry="2.6"/><ellipse cx="17" cy="15.5" rx="3" ry="2.6"/>',
     reminder: '<circle cx="12" cy="13" r="7.5"/><path d="M12 9.5V13l3 2M9.5 3.5h5"/>'
   };
 
@@ -139,19 +132,6 @@
       <div class="time">{time}</div>
       <div class="date">{date}</div>
     </div>
-
-    {#if weather}
-      <button class="wx sheet" onclick={(e) => press(e, 'weather')}>
-        <svg class="wx-icon" viewBox="0 0 24 24" aria-hidden="true">
-          <!-- eslint-disable-next-line svelte/no-at-html-tags — static glyph table -->
-          {@html GLYPHS[weather.glyph ?? 'cloud']}
-        </svg>
-        <span class="wx-text">
-          <span class="wx-title">{weather.title}</span>
-          <span class="wx-body">{weather.body}</span>
-        </span>
-      </button>
-    {/if}
   </div>
 
   <div class="side">
@@ -295,7 +275,6 @@
       0 10px 26px rgba(13, 63, 143, 0.12);
   }
 
-  .wx,
   .note {
     display: flex;
     align-items: center;
@@ -307,31 +286,18 @@
     flex: none;
     transition: transform 0.34s var(--ease-overshoot);
   }
-  .wx:active,
   .note:active {
     transform: scale(0.97);
     transition-duration: var(--press-duration);
     transition-timing-function: var(--ease-press);
   }
 
-  .wx-icon {
-    width: 34px;
-    height: 34px;
-    flex: none;
-    stroke: var(--deep);
-    stroke-width: 1.6;
-    fill: none;
-    stroke-linecap: round;
-    stroke-linejoin: round;
-  }
-  .wx-text,
   .note-text {
     display: flex;
     flex-direction: column;
     gap: 2px;
     min-width: 0;
   }
-  .wx-title,
   .note-title {
     font-size: 14.5px;
     font-weight: 700;
@@ -340,7 +306,6 @@
     overflow: hidden;
     text-overflow: ellipsis;
   }
-  .wx-body,
   .note-body {
     font-size: 12.5px;
     color: var(--ink-faint);
@@ -654,25 +619,6 @@
       font-size: 15px;
     }
 
-    /* the weather card carries the left column, so it can be generous */
-    .wx {
-      align-self: flex-start;
-      gap: 18px;
-      padding: 20px 26px;
-      border-radius: 26px;
-      max-width: 420px;
-    }
-    .wx-icon {
-      width: 44px;
-      height: 44px;
-    }
-    .wx-title {
-      font-size: 17px;
-    }
-    .wx-body {
-      font-size: 13px;
-    }
-
     /* the rail is a list: compact rows, not full-width slabs */
     .ai {
       padding: 15px 17px 13px;
@@ -713,8 +659,7 @@
       font-size: 12px;
     }
     /* a pointer can reach these, so let them answer to it */
-    .note:hover,
-    .wx:hover {
+    .note:hover {
       transform: translateY(-2px);
     }
     .note-x {

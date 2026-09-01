@@ -1,8 +1,6 @@
-import { instance } from '../sync';
 import { auth } from '../auth.svelte';
 import { settings, type FlowSettings } from '../settings.svelte';
 import { supabase } from '../sync/supabase';
-import { searchPlaces, type Place } from '../data/weather';
 
 /*
   Executing what the assistant asked for.
@@ -23,22 +21,9 @@ import { searchPlaces, type Place } from '../data/weather';
 */
 
 export interface RawAction {
-  name:
-    | 'setting'
-    | 'note-create'
-    | 'note-delete'
-    | 'weather-set'
-    | 'message-send'
-    | 'reminder-create'
-    | 'reminder-delete';
+  name: 'setting' | 'reminder-create' | 'reminder-delete';
   attrs: Record<string, string>;
   content: string;
-}
-
-interface StoredNote {
-  id: string;
-  text: string;
-  updated: number;
 }
 
 async function applySetting(attrs: Record<string, string>): Promise<string> {
@@ -93,78 +78,6 @@ async function applySetting(attrs: Record<string, string>): Promise<string> {
   }
 }
 
-async function createNote(content: string): Promise<string> {
-  const text = content.trim();
-  if (!text) return 'no note content given';
-  const state = await instance.getAppState('notes');
-  const notes = ((state?.notes as StoredNote[] | undefined) ?? []).slice();
-  const title = text.split('\n')[0].trim() || 'untitled';
-  notes.unshift({ id: crypto.randomUUID(), text, updated: Date.now() });
-  await instance.setAppState('notes', { notes });
-  return `note created: "${title}"`;
-}
-
-async function deleteNote(attrs: Record<string, string>): Promise<string> {
-  const id = attrs.id;
-  if (!id) return 'no note id given';
-  const state = await instance.getAppState('notes');
-  const notes = (state?.notes as StoredNote[] | undefined) ?? [];
-  const found = notes.find((n) => n.id === id);
-  if (!found) return "couldn't find that note";
-  await instance.setAppState('notes', { notes: notes.filter((n) => n.id !== id) });
-  const title = found.text.trim().split('\n')[0] || 'untitled';
-  return `note deleted: "${title}"`;
-}
-
-async function setWeatherPlace(attrs: Record<string, string>): Promise<string> {
-  const query = attrs.place?.trim();
-  if (!query) return 'no place given';
-  let results: Place[];
-  try {
-    results = await searchPlaces(query);
-  } catch {
-    return `couldn't look up "${query}" — offline?`;
-  }
-  const place = results[0];
-  if (!place) return `couldn't find a place named "${query}"`;
-  const current = await instance.getAppState('weather');
-  const useF = typeof current?.useF === 'boolean' ? current.useF : false;
-  await instance.setAppState('weather', { place, useF });
-  return `weather place set to ${place.name}`;
-}
-
-/* Messages is the shared board (see flow_shared_messaging): this posts as
-   the signed-in user into a table anyone on the instance can read, not a
-   private per-user blob like every other action here. */
-async function sendMessage(attrs: Record<string, string>, content: string): Promise<string> {
-  const target = attrs.thread?.trim();
-  const text = content.trim();
-  if (!target || !text || !auth.user) return 'a thread and a message are both required';
-
-  const { data: threads } = await supabase().from('message_threads').select('id, name');
-  let thread = (threads ?? []).find((t) => t.id === target);
-  if (!thread) thread = (threads ?? []).find((t) => t.name.toLowerCase() === target.toLowerCase());
-
-  let created = false;
-  if (!thread) {
-    const { data, error } = await supabase()
-      .from('message_threads')
-      .insert({ name: target, created_by: auth.user.id })
-      .select('id, name')
-      .single();
-    if (error || !data) return "couldn't start that thread";
-    thread = data;
-    created = true;
-  }
-
-  const { error } = await supabase()
-    .from('thread_messages')
-    .insert({ thread_id: thread.id, sender_id: auth.user.id, sender_name: auth.user.displayName, text });
-  if (error) return "couldn't send that message";
-
-  return created ? `started "${thread.name}" and sent your message` : `sent to "${thread.name}"`;
-}
-
 async function createReminder(attrs: Record<string, string>, content: string): Promise<string> {
   const text = content.trim();
   const at = attrs.at;
@@ -198,18 +111,6 @@ export async function applyActions(actions: RawAction[]): Promise<string[]> {
       switch (a.name) {
         case 'setting':
           results.push(await applySetting(a.attrs));
-          break;
-        case 'note-create':
-          results.push(await createNote(a.content));
-          break;
-        case 'note-delete':
-          results.push(await deleteNote(a.attrs));
-          break;
-        case 'weather-set':
-          results.push(await setWeatherPlace(a.attrs));
-          break;
-        case 'message-send':
-          results.push(await sendMessage(a.attrs, a.content));
           break;
         case 'reminder-create':
           results.push(await createReminder(a.attrs, a.content));
