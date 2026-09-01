@@ -554,7 +554,12 @@
     display: flex;
     flex-direction: column;
     gap: 14px;
-    padding: 2px 4px 12px;
+    /* `.fl-scroll`'s overflow-y: auto promotes overflow-x to auto too, which
+       was clipping each panel's `.fl-glass` shadow off square at the scroll
+       edge instead of letting it fade — the same fix Glance.svelte's
+       `.feed` and Assistant.svelte's `.list`/`.thread` use. */
+    padding: 2px 16px 12px;
+    margin: 0 -16px;
   }
   .panel {
     flex: none;

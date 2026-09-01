@@ -173,6 +173,11 @@
     display: flex;
     flex-direction: column;
     gap: 10px;
+    /* same shadow-clipping fix as Assistant.svelte's `.list`/`.thread` and
+       Settings.svelte's `.panels` — `.fl-scroll` clips a `.fl-glass` card's
+       shadow at the edge without this horizontal room to fall into */
+    padding: 4px 16px;
+    margin: 0 -16px;
   }
   .confirm,
   .err {
