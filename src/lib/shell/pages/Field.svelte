@@ -156,12 +156,19 @@
     column size with a `vh`-based `min()` too means the whole grid shrinks
     on a short viewport instead of just running out of room — a Chromebook
     browser window gets smaller orbs, not an overlapping or cut-off screen.
+
+    Two columns, not three: the app roster is a fixed four (flow, memory,
+    quick info, settings), and three columns left the last row with a single
+    orb stranded under the leftmost column — a lopsided 3-then-1 instead of
+    an even 2x2. The container width is capped tighter than before too, so
+    two columns sit close together as a natural cluster rather than
+    stretching across the same 600px three columns used.
   */
   .field {
     display: grid;
-    grid-template-columns: repeat(3, minmax(64px, min(148px, 16vh)));
+    grid-template-columns: repeat(2, minmax(64px, min(148px, 16vh)));
     gap: clamp(10px, 3.5vh, 34px) clamp(14px, 4vw, 30px);
-    width: min(600px, 100%);
+    width: min(360px, 100%);
     justify-content: center;
     flex: none;
   }

@@ -163,10 +163,9 @@
       oncancel: (r) => settle(r, 'back')
     }}
   >
-    <!-- Touch gets the bar and the drag; pointer devices get a real button in
-         the same place, because a drag is a poor gesture with a mouse. One
-         control, one position, two input models. -->
-    <span class="grabber" aria-hidden="true"></span>
+    <!-- One control, one position, every input model: a real tappable button.
+         Touch used to get a hidden swipe-up bar instead — undiscoverable, and
+         a poor fit next to a button sitting in the same hit zone. -->
     <button class="home-key" onclick={close} aria-label="go home">
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4l8 7h-2.5v8h-11v-8H4l8-7z" /></svg>
       <span>home</span>
@@ -266,22 +265,10 @@
   .exit-layer:active {
     cursor: grabbing;
   }
-  .grabber {
-    width: 118px;
-    height: 5px;
-    border-radius: 99px;
-    background: rgba(13, 63, 143, 0.3);
-    box-shadow: 0 1px 0 rgba(255, 255, 255, 0.7);
-    transition: transform 0.3s var(--ease-overshoot), background 0.3s ease;
-  }
-  .dragging .grabber {
-    background: rgba(13, 63, 143, 0.5);
-    transform: scaleX(1.12);
-  }
 
-  /* Desktop home key — same spot as the gesture bar it replaces. */
+  /* The universal exit control — same spot the old gesture bar occupied. */
   .home-key {
-    display: none;
+    display: inline-flex;
     align-items: center;
     gap: 8px;
     padding: 8px 18px;
@@ -318,21 +305,5 @@
     fill: none;
     stroke-linecap: round;
     stroke-linejoin: round;
-  }
-
-  /* touch: the bar only, driven entirely by the gesture */
-  @media (pointer: coarse) {
-    .home-key {
-      display: none;
-    }
-  }
-  /* pointer devices: the button instead of the bar */
-  @media (pointer: fine) {
-    .grabber {
-      display: none;
-    }
-    .home-key {
-      display: inline-flex;
-    }
   }
 </style>
