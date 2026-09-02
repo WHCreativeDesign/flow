@@ -193,9 +193,15 @@ async function unlinkMemories(attrs: Record<string, string>): Promise<string> {
   return 'unlinked those two memories';
 }
 
+/* Mirrors MAX_ACTIONS in the ai edge function. Six was enough for a setting
+   and a reminder; "link these together" or "merge the duplicates" is
+   legitimately a dozen memory edits in one reply, and quietly dropping the
+   tail of them looks exactly like the assistant half-doing what was asked. */
+const MAX_ACTIONS = 24;
+
 export async function applyActions(actions: RawAction[]): Promise<string[]> {
   const results: string[] = [];
-  for (const a of actions.slice(0, 6)) {
+  for (const a of actions.slice(0, MAX_ACTIONS)) {
     try {
       switch (a.name) {
         case 'setting':
