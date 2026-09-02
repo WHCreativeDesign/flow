@@ -62,6 +62,25 @@
     wake();
   });
 
+  /*
+    A node's x/y persists across sessions, but nothing about it is aware of
+    how big the canvas was when it was last placed. A graph positioned on a
+    phone-width canvas lands, unmoved, in a small corner of a much wider
+    desktop one — the view itself never re-centers for the viewport it's
+    actually being shown on. Left alone, every real node ends up outside
+    where a person would ever think to click, and dragging empty canvas
+    (which correctly pans) reads as "nodes are broken, only the canvas
+    moves." One automatic fit, the first time there is both a loaded graph
+    and a real canvas size to frame it against, fixes that without ever
+    fighting a manual pan/zoom the person does afterward.
+  */
+  let hasFitOnce = false;
+  $effect(() => {
+    if (hasFitOnce || !memoryStore.loaded || !width || !height || !memoryStore.nodes.length) return;
+    hasFitOnce = true;
+    fitView(true);
+  });
+
   $effect(() => {
     if (!wrapEl) return;
     const ro = new ResizeObserver(() => {
@@ -649,7 +668,7 @@
     if (!linking) linkFrom = null;
   });
 
-  function fitView() {
+  function fitView(silent = false) {
     const nodes = [...pos.values()];
     if (!nodes.length) {
       view.x = 0;
@@ -671,7 +690,7 @@
       view.x = width / 2 - cx * scale;
       view.y = height / 2 - cy * scale;
     }
-    play('tap');
+    if (!silent) play('tap');
     wake();
   }
 
@@ -725,7 +744,7 @@
       {/if}
     </div>
     <div class="head-actions">
-      <button class="fl-btn quiet fl-round" aria-label="fit view" onclick={fitView}>
+      <button class="fl-btn quiet fl-round" aria-label="fit view" onclick={() => fitView()}>
         <svg viewBox="0 0 24 24" aria-hidden="true">
           <path d="M4 9V5a1 1 0 0 1 1-1h4M20 9V5a1 1 0 0 0-1-1h-4M4 15v4a1 1 0 0 0 1 1h4M20 15v4a1 1 0 0 1-1 1h-4" />
         </svg>
