@@ -21,7 +21,15 @@ import { supabase } from '../sync/supabase';
 */
 
 export interface RawAction {
-  name: 'setting' | 'reminder-create' | 'reminder-delete';
+  name:
+    | 'setting'
+    | 'reminder-create'
+    | 'reminder-delete'
+    | 'memory-create'
+    | 'memory-update'
+    | 'memory-delete'
+    | 'memory-link'
+    | 'memory-unlink';
   attrs: Record<string, string>;
   content: string;
 }
@@ -104,6 +112,87 @@ async function deleteReminder(attrs: Record<string, string>): Promise<string> {
   return 'reminder removed';
 }
 
+/*
+  The memory graph is otherwise only ever written to from the memory app
+  itself (see memory.svelte.ts) or the assistant's own <remember>/quick-info
+  paths server-side. These four give the assistant the same reach a person
+  already has from that app — create, retitle or rewrite, delete, and link
+  or unlink two existing nodes — through the identical RLS-scoped table
+  writes, never through memory.svelte.ts's own client-side cache (which may
+  not even be loaded if the memory app isn't open), so a change here is
+  correct regardless of what else happens to be on screen.
+*/
+async function createMemory(attrs: Record<string, string>, content: string): Promise<string> {
+  const body = content.trim();
+  if (!body) return 'no memory content given';
+  if (!auth.user) return 'not signed in';
+  const title = attrs.title?.trim() || (body.length <= 40 ? body : `${body.slice(0, 40)}…`);
+
+  const { error } = await supabase().from('memory_nodes').insert({ user_id: auth.user.id, title, body, source: 'chat' });
+  if (error) return "couldn't save that memory";
+  return `remembered: "${title}"`;
+}
+
+async function updateMemory(attrs: Record<string, string>, content: string): Promise<string> {
+  const id = attrs.id;
+  if (!id) return 'no memory id given';
+  const title = attrs.title?.trim();
+  const body = content.trim();
+  if (!title && !body) return 'nothing to change';
+
+  const patch: Record<string, unknown> = { updated_at: new Date().toISOString() };
+  if (title) patch.title = title;
+  if (body) patch.body = body;
+
+  const { data, error } = await supabase().from('memory_nodes').update(patch).eq('id', id).select('id');
+  if (error) return "couldn't update that memory";
+  if (!data?.length) return "couldn't find that memory";
+  return `updated: "${title ?? 'that memory'}"`;
+}
+
+async function deleteMemory(attrs: Record<string, string>): Promise<string> {
+  const id = attrs.id;
+  if (!id) return 'no memory id given';
+  const { data, error } = await supabase().from('memory_nodes').delete().eq('id', id).select('id');
+  if (error) return "couldn't forget that memory";
+  if (!data?.length) return "couldn't find that memory";
+  return 'forgot that memory';
+}
+
+async function linkMemories(attrs: Record<string, string>): Promise<string> {
+  const a = attrs.a;
+  const b = attrs.b;
+  if (!a || !b || a === b) return 'need two different memory ids to link';
+  if (!auth.user) return 'not signed in';
+
+  const { error } = await supabase().from('memory_links').insert({ user_id: auth.user.id, a_id: a, b_id: b });
+  if (error) return 'those memories are already linked, or one of them was not found';
+  return 'linked those two memories';
+}
+
+/* a_id/b_id order isn't guaranteed to match how the link was created, so
+   this reads both candidate rows via a parameterized `.in()` filter (never
+   raw string interpolation of ids into a query) and picks the exact pair
+   client-side before deleting it by its own id. */
+async function unlinkMemories(attrs: Record<string, string>): Promise<string> {
+  const a = attrs.a;
+  const b = attrs.b;
+  if (!a || !b) return 'need two memory ids to unlink';
+
+  const { data: candidates, error: selectError } = await supabase()
+    .from('memory_links')
+    .select('id, a_id, b_id')
+    .in('a_id', [a, b])
+    .in('b_id', [a, b]);
+  if (selectError) return "couldn't unlink those memories";
+  const match = (candidates ?? []).find((l) => (l.a_id === a && l.b_id === b) || (l.a_id === b && l.b_id === a));
+  if (!match) return 'those memories were not linked';
+
+  const { error } = await supabase().from('memory_links').delete().eq('id', match.id);
+  if (error) return "couldn't unlink those memories";
+  return 'unlinked those two memories';
+}
+
 export async function applyActions(actions: RawAction[]): Promise<string[]> {
   const results: string[] = [];
   for (const a of actions.slice(0, 6)) {
@@ -117,6 +206,21 @@ export async function applyActions(actions: RawAction[]): Promise<string[]> {
           break;
         case 'reminder-delete':
           results.push(await deleteReminder(a.attrs));
+          break;
+        case 'memory-create':
+          results.push(await createMemory(a.attrs, a.content));
+          break;
+        case 'memory-update':
+          results.push(await updateMemory(a.attrs, a.content));
+          break;
+        case 'memory-delete':
+          results.push(await deleteMemory(a.attrs));
+          break;
+        case 'memory-link':
+          results.push(await linkMemories(a.attrs));
+          break;
+        case 'memory-unlink':
+          results.push(await unlinkMemories(a.attrs));
           break;
         default:
           // a name outside the closed vocabulary: never executed

@@ -10,7 +10,12 @@ const ACTION_TAGS = {
   remember: 'block',
   setting: 'self',
   'reminder-create': 'block',
-  'reminder-delete': 'self'
+  'reminder-delete': 'self',
+  'memory-create': 'block',
+  'memory-update': 'block',
+  'memory-delete': 'self',
+  'memory-link': 'self',
+  'memory-unlink': 'self'
 };
 
 function parseAttrs(raw) {
@@ -173,6 +178,37 @@ function check(label, actual, expected) {
   }
   emitted += hold; // flush whatever's left, as the real code does via `full` at stream end
   check('genuine "<" in prose reaches the reader', emitted, 'is 5 < 10, yes');
+}
+
+// 9. memory-create with a title attr and a multi-line markdown body
+{
+  const input =
+    'Saved.\n<memory-create title="Dentist">Dr. Alvarez, checkups every 6 months\nnext one is in March</memory-create>';
+  const { clean, actions } = extractActions(extractMemories(input).clean);
+  check('memory-create clean', clean, 'Saved.');
+  check('memory-create title attr', actions[0].attrs.title, 'Dentist');
+  check('memory-create body preserved with newline', actions[0].content, 'Dr. Alvarez, checkups every 6 months\nnext one is in March');
+}
+
+// 10. memory-update by id, retitling and rewriting together
+{
+  const input = '<memory-update id="mem-1" title="Dentist (updated)">now sees Dr. Cho</memory-update>done';
+  const { clean, actions } = extractActions(extractMemories(input).clean);
+  check('memory-update attrs', actions[0].attrs, { id: 'mem-1', title: 'Dentist (updated)' });
+  check('memory-update content', actions[0].content, 'now sees Dr. Cho');
+  check('memory-update surrounding text kept', clean, 'done');
+}
+
+// 11. memory-delete, memory-link and memory-unlink are all self-closing
+{
+  const input =
+    '<memory-delete id="mem-2"/> <memory-link a="mem-3" b="mem-4"/> <memory-unlink a="mem-5" b="mem-6"/> ok';
+  const { clean, actions } = extractActions(extractMemories(input).clean);
+  check('three memory actions found', actions.length, 3);
+  check('memory-delete id', actions[0].attrs.id, 'mem-2');
+  check('memory-link attrs', actions[1].attrs, { a: 'mem-3', b: 'mem-4' });
+  check('memory-unlink attrs', actions[2].attrs, { a: 'mem-5', b: 'mem-6' });
+  check('surrounding prose kept', clean, 'ok');
 }
 
 console.log(failures === 0 ? '\nALL PASS' : `\n${failures} FAILURE(S)`);
