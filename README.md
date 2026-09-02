@@ -181,14 +181,16 @@ opaque "unavailable".
 ## Actions
 
 The assistant can act on your own data, not just describe it: change a
-setting, or set or clear a reminder. It emits a small closed vocabulary of
-tags to do it — `<setting key="soundVolume" value="0.3"/>`,
-`<reminder-create at="...">...</reminder-create>`, and so on — the same
-convention `<remember>` already used for memory, extended rather than
-replaced. That choice over real provider tool-calling is deliberate: a fixed
-vocabulary behaves identically across Groq, NVIDIA and Gemini and survives
-the fallback chain exactly like `<remember>` does, where three different
-`tools`/`tool_calls` implementations would not.
+setting, set or clear a reminder, or reach into the memory graph itself —
+create a node, rewrite one, delete one, or connect and disconnect two. It
+emits a small closed vocabulary of tags to do it — `<setting key="soundVolume"
+value="0.3"/>`, `<reminder-create at="...">...</reminder-create>`,
+`<memory-link a="..." b="..."/>`, and so on — the same convention `<remember>`
+already used for memory, extended rather than replaced. That choice over real
+provider tool-calling is deliberate: a fixed vocabulary behaves identically
+across Groq, NVIDIA and Gemini and survives the fallback chain exactly like
+`<remember>` does, where three different `tools`/`tool_calls` implementations
+would not.
 
 The Edge Function's only job with an action tag is to recognise it, strip it
 from what you see, and hand it to the client as structured data. Every action
@@ -219,14 +221,31 @@ card, dismissed through the same `collect()`/`clearNote()` mechanism the
 glance uses generally — no separate "fired" flag, because a reminder's own
 id as its signature already means a dismissed one never comes back.
 
+**`memory-create`**, **`memory-update`**, **`memory-delete`**,
+**`memory-link`** and **`memory-unlink`** give the assistant the same reach
+into the graph a person already has from the memory app itself — asked
+outright to remember something specific, reorganize, correct, merge, connect,
+or forget, it can do it directly rather than only saying it can't. Every
+write goes through the identical RLS-scoped `memory_nodes`/`memory_links`
+calls the memory app's own drag-to-link, edit, and delete already use, never
+a separate or wider-reaching path. `memory-update`, `memory-delete`,
+`memory-link` and `memory-unlink` all require an existing node's real id,
+copied exactly from what the assistant was shown — an invented id is a silent
+no-op, the same failure mode `reminder-delete` already has. Asked to combine
+duplicate or overlapping notes, the model creates one clear replacement with
+`memory-create` and removes what it replaces with `memory-delete` in the same
+reply, rather than leaving stale nodes behind.
+
 ## What the assistant can see
 
 The assistant reads the signed-in person's own reminders and settings on
-every question, plus the memory graph's most recently touched nodes (see
-[Memory](#memory) above). Not a cached digest — assembled fresh, because the
-point is that it knows what is true now. Reminders carry their real id in
-the listing, which is what lets a `reminder-delete` action reference an
-existing one exactly rather than needing to invent one.
+every question, plus the memory graph's most recently touched nodes and every
+link between them (see [Memory](#memory) above). Not a cached digest —
+assembled fresh, because the point is that it knows what is true now.
+Reminders and memory nodes alike carry their real id in the listing, which is
+what lets a `reminder-delete` or `memory-update`/`memory-delete`/`memory-link`/
+`memory-unlink` action reference an existing one exactly rather than needing
+to invent one.
 
 Everything it sees stops at "cannot reach anyone else's." Not because the
 code is careful but because the layer underneath it cannot return another
