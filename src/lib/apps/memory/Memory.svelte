@@ -81,13 +81,31 @@
     fitView(true);
   });
 
+  /*
+    Size from the observer's own contentRect, never getBoundingClientRect().
+
+    An app mounts inside AppView's bloom, which starts its whole container at
+    transform: scale(0.06) and animates it up to scale(1). getBoundingClientRect
+    reports the *visual* rect, so a measurement taken during that animation —
+    and the first ResizeObserver callback always lands there — bakes the bloom's
+    scale into the canvas's own geometry: a 73x38 bitmap stretched across a
+    1244x646 element. ResizeObserver only reports *layout* size, which a
+    transform never changes, so it never fires again and the wrong size sticks
+    for the life of the app. That one measurement is what made the graph render
+    as a huge blurry crop nothing could zoom back out of, and what put every
+    node's drawn position in a different coordinate space from the pointer
+    landing on it, so taps and clicks quietly missed.
+
+    contentRect is layout size, so it is correct from the very first callback
+    no matter what is animating above it.
+  */
   $effect(() => {
     if (!wrapEl) return;
-    const ro = new ResizeObserver(() => {
-      const r = wrapEl!.getBoundingClientRect();
-      width = r.width;
-      height = r.height;
-      if (canvasEl) {
+    const ro = new ResizeObserver((entries) => {
+      const box = entries[0]?.contentRect;
+      width = box?.width || wrapEl!.clientWidth;
+      height = box?.height || wrapEl!.clientHeight;
+      if (canvasEl && width && height) {
         const dpr = window.devicePixelRatio || 1;
         canvasEl.width = width * dpr;
         canvasEl.height = height * dpr;
@@ -277,12 +295,23 @@
     const deep = color('--deep');
     const ink = color('--ink');
 
+    // while a node is hovered, its own neighbourhood stays lit and the rest of
+    // the graph steps back — see kinOf()
+    const kin = kinOf(hoverId);
+    const dim = (lit: boolean) => (hoverId && !lit ? 0.22 : 1);
+
     for (const l of memoryStore.links) {
       const a = pos.get(l.aId);
       const b = pos.get(l.bId);
       if (!a || !b) continue;
-      drawLink(ctx, a, b, { glow: true });
+      const lit = !!hoverId && (l.aId === hoverId || l.bId === hoverId);
+      ctx.globalAlpha = dim(lit);
+      drawLink(ctx, a, b, {
+        glow: true,
+        ...(lit ? { color: 'rgba(30, 111, 217, 0.85)', width: 2.6 } : {})
+      });
     }
+    ctx.globalAlpha = 1;
 
     // link-mode preview: a dashed curve from the pinned node to the pointer
     if (linkFrom && pointerScreen) {
@@ -299,13 +328,17 @@
       const isSelected = selected === n.id;
       const isLinkEnd = linkFrom === n.id;
       const isPressed = pressedId === n.id;
-      const r = RADIUS * (isPressed ? 0.92 : 1);
+      const isHovered = hoverId === n.id;
+      // the hovered node lifts slightly; its linked neighbours stay at full
+      // strength while everything unrelated dims back
+      const r = RADIUS * (isPressed ? 0.92 : isHovered ? 1.08 : 1);
+      ctx.globalAlpha = dim(kin.has(n.id));
 
       // ground shadow, offset down — lifts the node off the canvas instead
       // of reading as a flat painted circle
       ctx.save();
       ctx.shadowColor = 'rgba(13, 63, 143, 0.35)';
-      ctx.shadowBlur = isSelected || isLinkEnd ? 22 : 14;
+      ctx.shadowBlur = isSelected || isLinkEnd || isHovered ? 22 : 14;
       ctx.shadowOffsetY = 5;
       ctx.beginPath();
       ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
@@ -321,8 +354,8 @@
       // rim
       ctx.beginPath();
       ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
-      ctx.lineWidth = isSelected || isLinkEnd ? 3 : 1.4;
-      ctx.strokeStyle = isSelected || isLinkEnd ? deep : 'rgba(255,255,255,0.85)';
+      ctx.lineWidth = isSelected || isLinkEnd || isHovered ? 3 : 1.4;
+      ctx.strokeStyle = isSelected || isLinkEnd || isHovered ? deep : 'rgba(255,255,255,0.85)';
       ctx.stroke();
 
       // specular hotspot, upper-left — the same construction Orb.svelte
@@ -346,9 +379,12 @@
       ctx.font = '600 11px system-ui, sans-serif';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'top';
-      const label = n.title.length > 16 ? `${n.title.slice(0, 16)}…` : n.title;
+      // the hovered node names itself in full, however long — the label is
+      // the only thing identifying a disc, and a clipped one defeats it
+      const label = isHovered || n.title.length <= 16 ? n.title : `${n.title.slice(0, 16)}…`;
       ctx.fillText(label, p.x, p.y + RADIUS + 4);
     }
+    ctx.globalAlpha = 1;
 
     ctx.restore();
   }
@@ -409,9 +445,56 @@
       : []
   );
 
-  function screenPoint(e: PointerEvent): { x: number; y: number } {
+  /* getBoundingClientRect is the *visual* rect, and for the first ~0.8s after
+     an app opens its container is still scaling up through the bloom. width/
+     height are layout px (see the ResizeObserver above), so a pointer landing
+     mid-animation has to be converted into that same space or it points
+     somewhere the graph isn't. At rest the two are identical and this is a
+     no-op. */
+  function localPoint(clientX: number, clientY: number): { x: number; y: number } {
     const r = canvasEl!.getBoundingClientRect();
-    return { x: e.clientX - r.left, y: e.clientY - r.top };
+    const sx = r.width ? width / r.width : 1;
+    const sy = r.height ? height / r.height : 1;
+    return { x: (clientX - r.left) * sx, y: (clientY - r.top) * sy };
+  }
+
+  function screenPoint(e: PointerEvent): { x: number; y: number } {
+    return localPoint(e.clientX, e.clientY);
+  }
+
+  /*
+    Hover preview: the node under the pointer and everything it links to stay
+    lit while the rest of the graph dims back. That neighbourhood is the whole
+    point of storing links as a graph rather than a list — reading "what is
+    this connected to" off a settled force layout by eye is exactly what a
+    mind map is for, and it costs one redraw on the frames the answer changes.
+  */
+  let hoverId: string | null = null;
+
+  function kinOf(id: string | null): Set<string> {
+    const kin = new Set<string>();
+    if (!id) return kin;
+    kin.add(id);
+    for (const l of memoryStore.links) {
+      if (l.aId === id) kin.add(l.bId);
+      else if (l.bId === id) kin.add(l.aId);
+    }
+    return kin;
+  }
+
+  function updateHover(p: { x: number; y: number }) {
+    const w = toWorld(p.x, p.y);
+    const id = hitTest(w.x, w.y);
+    if (canvasEl) canvasEl.style.cursor = id ? 'pointer' : 'grab';
+    if (id === hoverId) return;
+    hoverId = id;
+    draw();
+  }
+
+  function clearHover() {
+    if (hoverId === null) return;
+    hoverId = null;
+    draw();
   }
 
   function hitTest(wx: number, wy: number): string | null {
@@ -516,7 +599,14 @@
   }
 
   function onpointermove(e: PointerEvent) {
-    if (!activePointers.has(e.pointerId)) return;
+    /* Hovering with no button down never went through pointerdown, so the
+       pointer is not in activePointers — the hover branch used to sit BELOW
+       this guard, which made it unreachable and left the graph with no hover
+       state at all. It belongs above it. */
+    if (!activePointers.has(e.pointerId)) {
+      if (e.pointerType !== 'touch') updateHover(localPoint(e.clientX, e.clientY));
+      return;
+    }
     const p = screenPoint(e);
     activePointers.set(e.pointerId, p);
     pointerScreen = p;
@@ -527,10 +617,6 @@
     }
 
     if (mode === 'idle') {
-      if (e.pointerType === 'mouse' && canvasEl) {
-        const w = toWorld(p.x, p.y);
-        canvasEl.style.cursor = hitTest(w.x, w.y) ? 'pointer' : 'grab';
-      }
       if (linkFrom) draw();
       return;
     }
@@ -636,9 +722,7 @@
      of two. Plain wheel/two-finger-scroll pans. */
   function onwheel(e: WheelEvent) {
     e.preventDefault();
-    const r = canvasEl!.getBoundingClientRect();
-    const sx = e.clientX - r.left;
-    const sy = e.clientY - r.top;
+    const { x: sx, y: sy } = localPoint(e.clientX, e.clientY);
     if (e.ctrlKey || e.metaKey) {
       const factor = Math.exp(-e.deltaY * 0.01);
       const scale = Math.min(MAX_SCALE, Math.max(MIN_SCALE, view.scale * factor));
@@ -683,7 +767,12 @@
       const maxY = Math.max(...ys) + RADIUS;
       const bw = Math.max(1, maxX - minX);
       const bh = Math.max(1, maxY - minY);
-      const scale = Math.min(MAX_SCALE, Math.max(MIN_SCALE, Math.min(width / bw, height / bh) * 0.88));
+      // the automatic fit only ever zooms OUT to bring a graph into view —
+      // framing two nodes at 2.75x on open is technically "fit" and reads as
+      // broken. Pressing the button is a person asking to frame tightly, so
+      // that one still gets the full range.
+      const ceiling = silent ? 1 : MAX_SCALE;
+      const scale = Math.min(ceiling, Math.max(MIN_SCALE, Math.min(width / bw, height / bh) * 0.88));
       const cx = (minX + maxX) / 2;
       const cy = (minY + maxY) / 2;
       view.scale = scale;
@@ -773,6 +862,7 @@
       onpointermove={onpointermove}
       onpointerup={endPointer}
       onpointercancel={endPointer}
+      onpointerleave={clearHover}
       onwheel={onwheel}
       aria-label="memory graph"
     ></canvas>
