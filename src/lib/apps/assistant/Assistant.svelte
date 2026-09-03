@@ -3,6 +3,7 @@
   import Reveal from '../../ai/Reveal.svelte';
   import Orb from '../../ai/Orb.svelte';
   import { play } from '../../sound/engine';
+  import { haptic } from '../../haptics';
   import Pane from '../../components/Pane.svelte';
   import { encodeImage } from '../../ai/context';
 
@@ -26,6 +27,53 @@
   let pinned = true;
   let picking = $state(false);
   let fileInput: HTMLInputElement | undefined = $state();
+
+  /*
+    Debug readout. Five taps on any reply's orb turns it on, five more turn it
+    off; while it is on, hovering an orb names the provider and model that
+    actually served that reply. Which of three providers answered — and on
+    which model — is invisible from the outside, and it is the first thing
+    worth knowing when the assistant starts behaving oddly. Deliberately not a
+    settings toggle: it is a diagnostic, not a preference, and a tap sequence
+    keeps it out of the way of someone who never needs it.
+  */
+  const DEBUG_KEY = 'flow.assistant.debug';
+  const TAPS_TO_TOGGLE = 5;
+  /** taps more than this far apart start the count over */
+  const TAP_WINDOW_MS = 1500;
+
+  let debug = $state(readDebug());
+  let taps = 0;
+  let lastTap = 0;
+
+  function readDebug(): boolean {
+    try {
+      return localStorage.getItem(DEBUG_KEY) === '1';
+    } catch {
+      return false;
+    }
+  }
+
+  function tapOrb() {
+    const now = Date.now();
+    taps = now - lastTap > TAP_WINDOW_MS ? 1 : taps + 1;
+    lastTap = now;
+    if (taps < TAPS_TO_TOGGLE) return;
+    taps = 0;
+    debug = !debug;
+    try {
+      localStorage.setItem(DEBUG_KEY, debug ? '1' : '0');
+    } catch {
+      /* private mode: the toggle lasts as long as the tab does */
+    }
+    play('toggle');
+    haptic('medium');
+  }
+
+  function servedBy(m: { provider?: string | null; model?: string | null }): string {
+    if (!m.provider && !m.model) return 'no provider recorded';
+    return [m.provider, m.model].filter(Boolean).join(' · ');
+  }
 
   /* The object URL is for the preview and the base64 is what the provider
      gets, built from the same bytes so the thumbnail cannot misrepresent
@@ -160,7 +208,14 @@
             </div>
           {:else}
             <div class="turn bot">
-              <div class="mark"><Orb size={26} active={false} /></div>
+              <div class="mark" class:debug>
+                <button class="orb-tap" onclick={tapOrb} aria-label="assistant">
+                  <Orb size={26} active={false} />
+                </button>
+                {#if debug}
+                  <span class="served fl-glass">{servedBy(m)}</span>
+                {/if}
+              </div>
               <div class="answer">
                 <Reveal
                   text={m.content}
@@ -644,6 +699,50 @@
   @media (prefers-reduced-motion: reduce) {
     .send {
       transition: none;
+    }
+  }
+  /* the orb is now a tap target (five taps toggle the debug readout), so it
+     has to carry no button chrome of its own */
+  .orb-tap {
+    display: block;
+    padding: 0;
+    border: 0;
+    background: none;
+    cursor: pointer;
+    line-height: 0;
+  }
+  .mark.debug {
+    position: relative;
+  }
+  /* the readout sits above the orb and only on hover, so it never displaces
+     a line of the conversation */
+  .served {
+    position: absolute;
+    bottom: calc(100% + 6px);
+    left: 0;
+    z-index: 5;
+    white-space: nowrap;
+    padding: 5px 9px;
+    border-radius: 9px;
+    font-family: var(--font-body);
+    font-size: 10.5px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    color: var(--deep);
+    opacity: 0;
+    transform: translateY(3px);
+    transition: opacity 0.18s ease, transform 0.18s ease;
+    pointer-events: none;
+  }
+  .mark.debug:hover .served {
+    opacity: 1;
+    transform: none;
+  }
+  /* no hover on a touchscreen: there the readout just stays visible */
+  @media (hover: none) {
+    .served {
+      opacity: 1;
+      transform: none;
     }
   }
 </style>
