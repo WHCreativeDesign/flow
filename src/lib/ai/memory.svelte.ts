@@ -17,6 +17,11 @@ export interface MemoryNode {
   id: string;
   title: string;
   body: string;
+  /* 'root' is the one base node per person — the profile everything else
+     hangs off. 'chat' | 'quickinfo' | 'manual' | 'migrated' are ordinary
+     nodes. The graph draws the root larger because it is the hub, and
+     createMemory() links new nodes back to it. */
+  source: string;
   x: number | null;
   y: number | null;
   updatedAt: string;
@@ -36,13 +41,14 @@ class MemoryStore {
   async load() {
     if (!auth.user) return;
     const [{ data: nodeRows }, { data: linkRows }] = await Promise.all([
-      supabase().from('memory_nodes').select('id, title, body, x, y, updated_at').order('updated_at', { ascending: false }),
+      supabase().from('memory_nodes').select('id, title, body, source, x, y, updated_at').order('updated_at', { ascending: false }),
       supabase().from('memory_links').select('id, a_id, b_id')
     ]);
     this.nodes = (nodeRows ?? []).map((n) => ({
       id: n.id as string,
       title: n.title as string,
       body: n.body as string,
+      source: (n.source as string) ?? 'chat',
       x: n.x as number | null,
       y: n.y as number | null,
       updatedAt: n.updated_at as string
@@ -56,13 +62,14 @@ class MemoryStore {
     const { data, error } = await supabase()
       .from('memory_nodes')
       .insert({ user_id: auth.user.id, title: title.trim() || 'untitled', body, source: 'manual' })
-      .select('id, title, body, x, y, updated_at')
+      .select('id, title, body, source, x, y, updated_at')
       .single();
     if (error || !data) return null;
     const node: MemoryNode = {
       id: data.id as string,
       title: data.title as string,
       body: data.body as string,
+      source: (data.source as string) ?? 'manual',
       x: data.x as number | null,
       y: data.y as number | null,
       updatedAt: data.updated_at as string

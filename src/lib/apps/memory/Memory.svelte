@@ -329,9 +329,12 @@
       const isLinkEnd = linkFrom === n.id;
       const isPressed = pressedId === n.id;
       const isHovered = hoverId === n.id;
-      // the hovered node lifts slightly; its linked neighbours stay at full
-      // strength while everything unrelated dims back
-      const r = RADIUS * (isPressed ? 0.92 : isHovered ? 1.08 : 1);
+      // the base node is drawn half again as large: it is the hub every other
+      // node hangs off, and a graph reads wrong if its centre is the same
+      // size as the scraps branching from it
+      const isRoot = n.source === 'root';
+      const base = RADIUS * (isRoot ? 1.5 : 1);
+      const r = base * (isPressed ? 0.92 : isHovered ? 1.08 : 1);
       ctx.globalAlpha = dim(kin.has(n.id));
 
       // ground shadow, offset down — lifts the node off the canvas instead
@@ -382,7 +385,7 @@
       // the hovered node names itself in full, however long — the label is
       // the only thing identifying a disc, and a clipped one defeats it
       const label = isHovered || n.title.length <= 16 ? n.title : `${n.title.slice(0, 16)}…`;
-      ctx.fillText(label, p.x, p.y + RADIUS + 4);
+      ctx.fillText(label, p.x, p.y + base + 4);
     }
     ctx.globalAlpha = 1;
 
@@ -497,11 +500,19 @@
     draw();
   }
 
+  /** the drawn radius of a node — the root is the larger hub */
+  function radiusOf(id: string): number {
+    return memoryStore.nodes.find((n) => n.id === id)?.source === 'root' ? RADIUS * 1.5 : RADIUS;
+  }
+
   function hitTest(wx: number, wy: number): string | null {
     for (const n of memoryStore.nodes) {
       const p = pos.get(n.id);
       if (!p) continue;
-      if ((p.x - wx) ** 2 + (p.y - wy) ** 2 <= RADIUS * RADIUS) return n.id;
+      // against the radius actually drawn, so the bigger root is not left
+      // with a dead ring around it
+      const r = radiusOf(n.id);
+      if ((p.x - wx) ** 2 + (p.y - wy) ** 2 <= r * r) return n.id;
     }
     return null;
   }
