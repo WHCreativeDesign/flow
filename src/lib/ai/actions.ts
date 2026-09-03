@@ -122,14 +122,36 @@ async function deleteReminder(attrs: Record<string, string>): Promise<string> {
   not even be loaded if the memory app isn't open), so a change here is
   correct regardless of what else happens to be on screen.
 */
+/* Every node hangs off the one base node unless it is deliberately linked
+   somewhere else. Doing it here rather than trusting the model to emit a
+   memory-link means the graph stays a graph even when it forgets: an
+   unlinked scrap floating on its own is exactly the shape this was meant to
+   stop producing. */
+async function linkToRoot(nodeId: string) {
+  if (!auth.user) return;
+  const { data: root } = await supabase()
+    .from('memory_nodes')
+    .select('id')
+    .eq('source', 'root')
+    .limit(1)
+    .maybeSingle();
+  if (!root?.id || root.id === nodeId) return;
+  await supabase().from('memory_links').insert({ user_id: auth.user.id, a_id: root.id, b_id: nodeId });
+}
+
 async function createMemory(attrs: Record<string, string>, content: string): Promise<string> {
   const body = content.trim();
   if (!body) return 'no memory content given';
   if (!auth.user) return 'not signed in';
   const title = attrs.title?.trim() || (body.length <= 40 ? body : `${body.slice(0, 40)}…`);
 
-  const { error } = await supabase().from('memory_nodes').insert({ user_id: auth.user.id, title, body, source: 'chat' });
-  if (error) return "couldn't save that memory";
+  const { data, error } = await supabase()
+    .from('memory_nodes')
+    .insert({ user_id: auth.user.id, title, body, source: 'chat' })
+    .select('id')
+    .single();
+  if (error || !data) return "couldn't save that memory";
+  await linkToRoot(data.id as string);
   return `remembered: "${title}"`;
 }
 
