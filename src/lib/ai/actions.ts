@@ -122,24 +122,57 @@ async function deleteReminder(attrs: Record<string, string>): Promise<string> {
   not even be loaded if the memory app isn't open), so a change here is
   correct regardless of what else happens to be on screen.
 */
-/* Every node hangs off the one base node unless it is deliberately linked
-   somewhere else. Doing it here rather than trusting the model to emit a
-   memory-link means the graph stays a graph even when it forgets: an
-   unlinked scrap floating on its own is exactly the shape this was meant to
-   stop producing. */
-async function linkToRoot(nodeId: string) {
-  if (!auth.user) return;
+/*
+  Nothing is left floating, but nothing is force-flattened either.
+
+  The first version of this pinned every new node straight to the base, which
+  guaranteed a connected graph and produced a star: one centre with thirty
+  spokes. A real mind map has intermediate hubs — Friends, School — with the
+  individual notes hanging off those, and a note often belongs to more than
+  one of them (a friend is under Friends AND under the school they go to).
+  Forcing a base link would flatten exactly that.
+
+  So a created node is anchored to the base only if it ended the batch with
+  no links at all. Whatever structure the model actually built is kept; only
+  genuine orphans get rescued.
+*/
+async function anchorOrphans(createdIds: string[]) {
+  if (!auth.user || !createdIds.length) return;
+
   const { data: root } = await supabase()
     .from('memory_nodes')
     .select('id')
     .eq('source', 'root')
     .limit(1)
     .maybeSingle();
-  if (!root?.id || root.id === nodeId) return;
-  await supabase().from('memory_links').insert({ user_id: auth.user.id, a_id: root.id, b_id: nodeId });
+  if (!root?.id) return;
+
+  const targets = createdIds.filter((id) => id !== root.id);
+  if (!targets.length) return;
+
+  // one read for the whole batch: every link touching any node just created
+  const [{ data: asA }, { data: asB }] = await Promise.all([
+    supabase().from('memory_links').select('a_id, b_id').in('a_id', targets),
+    supabase().from('memory_links').select('a_id, b_id').in('b_id', targets)
+  ]);
+  const linked = new Set<string>();
+  for (const l of [...(asA ?? []), ...(asB ?? [])]) {
+    linked.add(l.a_id as string);
+    linked.add(l.b_id as string);
+  }
+
+  const orphans = targets.filter((id) => !linked.has(id));
+  if (!orphans.length) return;
+  await supabase()
+    .from('memory_links')
+    .insert(orphans.map((id) => ({ user_id: auth.user!.id, a_id: root.id, b_id: id })));
 }
 
-async function createMemory(attrs: Record<string, string>, content: string): Promise<string> {
+async function createMemory(
+  attrs: Record<string, string>,
+  content: string,
+  createdIds: string[]
+): Promise<string> {
   const body = content.trim();
   if (!body) return 'no memory content given';
   if (!auth.user) return 'not signed in';
@@ -151,7 +184,7 @@ async function createMemory(attrs: Record<string, string>, content: string): Pro
     .select('id')
     .single();
   if (error || !data) return "couldn't save that memory";
-  await linkToRoot(data.id as string);
+  createdIds.push(data.id as string);
   return `remembered: "${title}"`;
 }
 
@@ -223,6 +256,11 @@ const MAX_ACTIONS = 24;
 
 export async function applyActions(actions: RawAction[]): Promise<string[]> {
   const results: string[] = [];
+  /* ids created in this batch, checked for orphans once every action in the
+     reply has run — the model usually emits its memory-link tags after the
+     memory-create ones they refer to */
+  const createdIds: string[] = [];
+
   for (const a of actions.slice(0, MAX_ACTIONS)) {
     try {
       switch (a.name) {
@@ -236,7 +274,7 @@ export async function applyActions(actions: RawAction[]): Promise<string[]> {
           results.push(await deleteReminder(a.attrs));
           break;
         case 'memory-create':
-          results.push(await createMemory(a.attrs, a.content));
+          results.push(await createMemory(a.attrs, a.content, createdIds));
           break;
         case 'memory-update':
           results.push(await updateMemory(a.attrs, a.content));
@@ -257,6 +295,13 @@ export async function applyActions(actions: RawAction[]): Promise<string[]> {
     } catch {
       results.push('something went wrong doing that');
     }
+  }
+
+  try {
+    await anchorOrphans(createdIds);
+  } catch {
+    /* the notes themselves are saved; a missing rescue link is not worth
+       turning the whole reply into an error */
   }
   return results;
 }
