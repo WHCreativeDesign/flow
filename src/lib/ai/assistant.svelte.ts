@@ -27,6 +27,10 @@ export interface ChatMessage {
   role: 'user' | 'assistant' | 'system';
   content: string;
   model?: string | null;
+  /** which provider actually served this reply. In memory only — it is not a
+      column on chat_messages, so it is here for the session that saw it,
+      which is all the debug readout needs. */
+  provider?: string | null;
   createdAt: string;
   /** only a reply that just arrived animates; history renders instantly */
   fresh?: boolean;
@@ -236,6 +240,7 @@ class Assistant {
       let started = false;
       let text = '';
       let model: string | null = null;
+      let provider: string | null = null;
       let data: { reply?: string; remembered?: string[]; actions?: RawAction[] } = {};
 
       const append = (delta: string) => {
@@ -283,6 +288,7 @@ class Assistant {
             try {
               const evt = JSON.parse(payload);
               if (evt.model) model = evt.model;
+              if (evt.provider) provider = evt.provider;
               if (evt.delta) append(evt.delta);
               if (evt.error) streamError = String(evt.error);
               if (evt.done) data = evt;
@@ -318,6 +324,7 @@ class Assistant {
             role: 'assistant',
             content: finalText,
             model,
+            provider,
             createdAt: new Date().toISOString(),
             fresh: true,
             complete: true
@@ -325,7 +332,7 @@ class Assistant {
         ];
       } else {
         this.messages = this.messages.map((m) =>
-          m.id === replyId ? { ...m, content: finalText, model, complete: true } : m
+          m.id === replyId ? { ...m, content: finalText, model, provider, complete: true } : m
         );
       }
 
