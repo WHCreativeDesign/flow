@@ -75,6 +75,30 @@
     return [m.provider, m.model].filter(Boolean).join(' · ');
   }
 
+  /*
+    Copy a reply. navigator.clipboard.writeText needs a secure context, which
+    GitHub Pages always is, so no execCommand fallback is carried for a case
+    that can't happen here. `copiedId` names which reply just succeeded so
+    only that one answer's button shows the confirmation, not every button on
+    screen.
+  */
+  let copiedId = $state<string | null>(null);
+  let copiedTimer: ReturnType<typeof setTimeout> | undefined;
+
+  async function copyReply(id: string, text: string) {
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch {
+      play('deny');
+      return;
+    }
+    play('tap');
+    haptic('light');
+    copiedId = id;
+    clearTimeout(copiedTimer);
+    copiedTimer = setTimeout(() => (copiedId = null), 1600);
+  }
+
   /* The object URL is for the preview and the base64 is what the provider
      gets, built from the same bytes so the thumbnail cannot misrepresent
      what was actually sent. */
@@ -223,6 +247,22 @@
                   complete={m.complete !== false}
                   onprogress={() => follow(false)}
                 />
+                {#if m.complete !== false}
+                  <button
+                    class="copy-btn"
+                    class:copied={copiedId === m.id}
+                    onclick={() => copyReply(m.id, m.content)}
+                    aria-label={copiedId === m.id ? 'copied' : 'copy reply'}
+                  >
+                    {#if copiedId === m.id}
+                      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7" /></svg>
+                      <span>copied</span>
+                    {:else}
+                      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 9V6a2 2 0 012-2h7a2 2 0 012 2v7a2 2 0 01-2 2h-3M9 9H6a2 2 0 00-2 2v7a2 2 0 002 2h7a2 2 0 002-2v-3" /></svg>
+                      <span>copy</span>
+                    {/if}
+                  </button>
+                {/if}
               </div>
             </div>
           {/if}
@@ -491,6 +531,54 @@
     line-height: 1.62;
     color: var(--deep);
     padding-top: 1px;
+  }
+
+  /* Sits right under the prose, faded until the turn is hovered — a chat
+     transcript is meant to be read, not chrome-first, so the affordance
+     shows up on approach rather than sitting there permanently. Touch has no
+     hover, so it stays visible there the same way the debug readout does. */
+  .copy-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    margin-top: 8px;
+    padding: 5px 9px 5px 7px;
+    border: 0;
+    border-radius: 8px;
+    background: none;
+    color: var(--deep);
+    opacity: 0.45;
+    font-family: var(--font-body);
+    font-size: 11.5px;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    cursor: pointer;
+    transition: opacity 0.15s ease, background 0.15s ease;
+  }
+  .copy-btn svg {
+    width: 13px;
+    height: 13px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 2;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+  .turn.bot:hover .copy-btn,
+  .copy-btn:focus-visible,
+  .copy-btn.copied {
+    opacity: 1;
+  }
+  .copy-btn:hover {
+    background: var(--glass-bg, hsl(0 0% 100% / 0.5));
+  }
+  .copy-btn.copied {
+    color: hsl(150 55% 32%);
+  }
+  @media (hover: none) {
+    .copy-btn {
+      opacity: 0.55;
+    }
   }
   .answer.waiting {
     opacity: 0.5;
