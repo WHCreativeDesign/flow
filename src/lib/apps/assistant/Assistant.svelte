@@ -76,6 +76,21 @@
   }
 
   /*
+    Which notes recall pulled in full for this reply, and how it picked them —
+    the second half of the debug readout. Without this, "the assistant sounds
+    like it's guessing" and "recall picked the wrong notes" look identical
+    from outside; this is what tells them apart.
+  */
+  function recallSummary(m: { recallVia?: string | null; recallNotes?: string[] | null }): string {
+    if (!m.recallVia) return '';
+    const notes = m.recallNotes ?? [];
+    if (!notes.length) return `${m.recallVia} — no notes pulled`;
+    const shown = notes.slice(0, 6);
+    const extra = notes.length - shown.length;
+    return `${m.recallVia} — ${shown.join(', ')}${extra > 0 ? ` +${extra} more` : ''}`;
+  }
+
+  /*
     Copy a reply. navigator.clipboard.writeText needs a secure context, which
     GitHub Pages always is, so no execCommand fallback is carried for a case
     that can't happen here. `copiedId` names which reply just succeeded so
@@ -237,7 +252,12 @@
                   <Orb size={26} active={false} />
                 </button>
                 {#if debug}
-                  <span class="served fl-glass">{servedBy(m)}</span>
+                  <div class="served fl-glass">
+                    <span class="served-line">{servedBy(m)}</span>
+                    {#if recallSummary(m)}
+                      <span class="served-line recall">{recallSummary(m)}</span>
+                    {/if}
+                  </div>
                 {/if}
               </div>
               <div class="answer">
@@ -809,18 +829,34 @@
     bottom: calc(100% + 6px);
     left: 0;
     z-index: 5;
-    white-space: nowrap;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    width: max-content;
+    max-width: min(280px, 70vw);
     padding: 5px 9px;
     border-radius: 9px;
+    opacity: 0;
+    transform: translateY(3px);
+    transition: opacity 0.18s ease, transform 0.18s ease;
+    pointer-events: none;
+  }
+  .served-line {
     font-family: var(--font-body);
     font-size: 10.5px;
     font-weight: 700;
     letter-spacing: 0.04em;
     color: var(--deep);
-    opacity: 0;
-    transform: translateY(3px);
-    transition: opacity 0.18s ease, transform 0.18s ease;
-    pointer-events: none;
+    white-space: normal;
+    overflow-wrap: break-word;
+  }
+  /* the notes list is the longer, less scannable half — a hair smaller and
+     lighter so the provider/model line still reads first */
+  .served-line.recall {
+    font-size: 9.5px;
+    font-weight: 600;
+    letter-spacing: 0.01em;
+    opacity: 0.8;
   }
   .mark.debug:hover .served {
     opacity: 1;
