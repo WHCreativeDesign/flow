@@ -15,7 +15,11 @@ const ACTION_TAGS = {
   'memory-update': 'block',
   'memory-delete': 'self',
   'memory-link': 'self',
-  'memory-unlink': 'self'
+  'memory-unlink': 'self',
+  'assignment-create': 'self',
+  'assignment-update': 'self',
+  'assignment-done': 'self',
+  'assignment-delete': 'self'
 };
 
 function parseAttrs(raw) {
@@ -209,6 +213,26 @@ function check(label, actual, expected) {
   check('memory-link attrs', actions[1].attrs, { a: 'mem-3', b: 'mem-4' });
   check('memory-unlink attrs', actions[2].attrs, { a: 'mem-5', b: 'mem-6' });
   check('surrounding prose kept', clean, 'ok');
+}
+
+// 12. assignment-create, self-closing with attrs only
+{
+  const input = 'Added it.\n<assignment-create title="Lab report" subject="Chemistry" due="2026-09-12"/>';
+  const { clean, actions } = extractActions(extractMemories(input).clean);
+  check('assignment-create clean', clean, 'Added it.');
+  check('assignment-create attrs', actions[0].attrs, { title: 'Lab report', subject: 'Chemistry', due: '2026-09-12' });
+}
+
+// 13. assignment-update, assignment-done and assignment-delete
+{
+  const input =
+    '<assignment-update id="a-1" grade="92%" impact="10% of final grade"/> <assignment-done id="a-2"/> <assignment-delete id="a-3"/> noted';
+  const { clean, actions } = extractActions(extractMemories(input).clean);
+  check('three assignment actions found', actions.length, 3);
+  check('assignment-update attrs', actions[0].attrs, { id: 'a-1', grade: '92%', impact: '10% of final grade' });
+  check('assignment-done id', actions[1].attrs.id, 'a-2');
+  check('assignment-delete id', actions[2].attrs.id, 'a-3');
+  check('surrounding prose kept', clean, 'noted');
 }
 
 console.log(failures === 0 ? '\nALL PASS' : `\n${failures} FAILURE(S)`);

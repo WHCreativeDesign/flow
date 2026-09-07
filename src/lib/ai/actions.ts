@@ -29,7 +29,11 @@ export interface RawAction {
     | 'memory-update'
     | 'memory-delete'
     | 'memory-link'
-    | 'memory-unlink';
+    | 'memory-unlink'
+    | 'assignment-create'
+    | 'assignment-update'
+    | 'assignment-done'
+    | 'assignment-delete';
   attrs: Record<string, string>;
   content: string;
 }
@@ -248,6 +252,89 @@ async function unlinkMemories(attrs: Record<string, string>): Promise<string> {
   return 'unlinked those two memories';
 }
 
+/*
+  The assignment tracker is a flat checklist, not a graph — no linking, no
+  base node, so these four mirror the memory-* handlers' shape but not their
+  complexity. Same reasoning as everywhere else in this file: these are the
+  exact table writes the Assignments app itself makes (see
+  ai/assignments.svelte.ts), just reached from a chat reply instead of a tap.
+*/
+function parseDueDate(due: string): { at: string | null } | { error: string } {
+  if (!due) return { at: null };
+  const d = new Date(`${due}T00:00:00`);
+  if (Number.isNaN(d.getTime())) return { error: `couldn't understand the due date "${due}"` };
+  return { at: d.toISOString() };
+}
+
+async function createAssignment(attrs: Record<string, string>): Promise<string> {
+  const title = attrs.title?.trim();
+  if (!title) return 'no assignment title given';
+  if (!auth.user) return 'not signed in';
+
+  let dueAt: string | null = null;
+  if (attrs.due) {
+    const parsed = parseDueDate(attrs.due);
+    if ('error' in parsed) return parsed.error;
+    dueAt = parsed.at;
+  }
+
+  const { error } = await supabase().from('assignments').insert({
+    user_id: auth.user.id,
+    title,
+    subject: attrs.subject?.trim() ?? '',
+    due_at: dueAt,
+    grade: attrs.grade?.trim() ?? '',
+    grade_impact: attrs.impact?.trim() ?? ''
+  });
+  if (error) return "couldn't add that assignment";
+  return `added assignment: "${title}"${attrs.due ? ` (due ${attrs.due})` : ''}`;
+}
+
+async function updateAssignment(attrs: Record<string, string>): Promise<string> {
+  const id = attrs.id;
+  if (!id) return 'no assignment id given';
+
+  const patch: Record<string, unknown> = { updated_at: new Date().toISOString() };
+  if (attrs.title !== undefined) patch.title = attrs.title.trim() || 'untitled assignment';
+  if (attrs.subject !== undefined) patch.subject = attrs.subject;
+  if (attrs.grade !== undefined) patch.grade = attrs.grade;
+  if (attrs.impact !== undefined) patch.grade_impact = attrs.impact;
+  if (attrs.due !== undefined) {
+    const parsed = parseDueDate(attrs.due);
+    if ('error' in parsed) return parsed.error;
+    patch.due_at = parsed.at;
+  }
+  if (Object.keys(patch).length === 1) return 'nothing to change';
+
+  const { data, error } = await supabase().from('assignments').update(patch).eq('id', id).select('id');
+  if (error) return "couldn't update that assignment";
+  if (!data?.length) return "couldn't find that assignment";
+  return 'updated that assignment';
+}
+
+async function completeAssignment(attrs: Record<string, string>): Promise<string> {
+  const id = attrs.id;
+  if (!id) return 'no assignment id given';
+  const now = new Date().toISOString();
+  const { data, error } = await supabase()
+    .from('assignments')
+    .update({ status: 'done', completed_at: now, updated_at: now })
+    .eq('id', id)
+    .select('id');
+  if (error) return "couldn't mark that assignment done";
+  if (!data?.length) return "couldn't find that assignment";
+  return 'marked that assignment done';
+}
+
+async function deleteAssignment(attrs: Record<string, string>): Promise<string> {
+  const id = attrs.id;
+  if (!id) return 'no assignment id given';
+  const { data, error } = await supabase().from('assignments').delete().eq('id', id).select('id');
+  if (error) return "couldn't remove that assignment";
+  if (!data?.length) return "couldn't find that assignment";
+  return 'removed that assignment';
+}
+
 /* Mirrors MAX_ACTIONS in the ai edge function. Six was enough for a setting
    and a reminder; "link these together" or "merge the duplicates" is
    legitimately a dozen memory edits in one reply, and quietly dropping the
@@ -287,6 +374,18 @@ export async function applyActions(actions: RawAction[]): Promise<string[]> {
           break;
         case 'memory-unlink':
           results.push(await unlinkMemories(a.attrs));
+          break;
+        case 'assignment-create':
+          results.push(await createAssignment(a.attrs));
+          break;
+        case 'assignment-update':
+          results.push(await updateAssignment(a.attrs));
+          break;
+        case 'assignment-done':
+          results.push(await completeAssignment(a.attrs));
+          break;
+        case 'assignment-delete':
+          results.push(await deleteAssignment(a.attrs));
           break;
         default:
           // a name outside the closed vocabulary: never executed

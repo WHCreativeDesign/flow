@@ -2,6 +2,7 @@ import type { Component } from 'svelte';
 import Assistant from './assistant/Assistant.svelte';
 import Memory from './memory/Memory.svelte';
 import QuickInfo from './quickinfo/QuickInfo.svelte';
+import Assignments from './assignments/Assignments.svelte';
 import Settings from './settings/Settings.svelte';
 
 /*
@@ -34,6 +35,12 @@ export const apps: FlowApp[] = [
     label: 'quick info',
     icon: '<path d="M13 3 5 13.5h5.5L10 21l8-11h-5.5L13 3z"/>',
     component: QuickInfo
+  },
+  {
+    id: 'assignments',
+    label: 'assignments',
+    icon: '<rect x="5" y="4" width="14" height="17" rx="2.2"/><path d="M8.5 9.5h7M8.5 13h7M8.5 16.5h4"/><path d="M9 4V3.4a1.4 1.4 0 0 1 1.4-1.4h3.2A1.4 1.4 0 0 1 15 3.4V4"/>',
+    component: Assignments
   },
   {
     id: 'settings',
