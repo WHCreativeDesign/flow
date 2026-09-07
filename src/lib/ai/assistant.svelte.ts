@@ -31,6 +31,12 @@ export interface ChatMessage {
       column on chat_messages, so it is here for the session that saw it,
       which is all the debug readout needs. */
   provider?: string | null;
+  /** which notes the recall step pulled in full for this reply, and how it
+      picked them (a model name, or "local" / "whole graph"). In memory only,
+      same as provider/model — a diagnostic for the debug readout, not
+      something stored history needs to carry. */
+  recallNotes?: string[] | null;
+  recallVia?: string | null;
   createdAt: string;
   /** only a reply that just arrived animates; history renders instantly */
   fresh?: boolean;
@@ -241,7 +247,12 @@ class Assistant {
       let text = '';
       let model: string | null = null;
       let provider: string | null = null;
-      let data: { reply?: string; remembered?: string[]; actions?: RawAction[] } = {};
+      let data: {
+        reply?: string;
+        remembered?: string[];
+        actions?: RawAction[];
+        recall?: { via?: string; notes?: string[] };
+      } = {};
 
       const append = (delta: string) => {
         text += delta;
@@ -314,6 +325,9 @@ class Assistant {
         return;
       }
 
+      const recallVia = data.recall?.via ?? null;
+      const recallNotes = data.recall?.notes ?? null;
+
       if (!started) {
         this.thinking = false;
         play('reply');
@@ -325,6 +339,8 @@ class Assistant {
             content: finalText,
             model,
             provider,
+            recallVia,
+            recallNotes,
             createdAt: new Date().toISOString(),
             fresh: true,
             complete: true
@@ -332,7 +348,7 @@ class Assistant {
         ];
       } else {
         this.messages = this.messages.map((m) =>
-          m.id === replyId ? { ...m, content: finalText, model, provider, complete: true } : m
+          m.id === replyId ? { ...m, content: finalText, model, provider, recallVia, recallNotes, complete: true } : m
         );
       }
 
